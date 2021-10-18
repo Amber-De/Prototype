@@ -1,8 +1,9 @@
 import cv2
+import numpy as np
+import matplotlib.pyplot as plt
 import argparse
 import dlib
 import logging
-import numpy as np
 from imutils import face_utils
 
 # construct the argument parse and parse the arguments
@@ -21,6 +22,9 @@ predictor = dlib.shape_predictor(args["shape_predictor"])
 known_distance = 30
 # width of face
 known_width = 14
+
+bright_thres = 0.5
+dark_thres = 0.4
 
 cap = cv2.VideoCapture(0)
 
@@ -43,24 +47,34 @@ def distance_finder(Focal_Length, real_face_width, face_width_frame):
 def face_data(image):
     face_width = 0
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    dark_part = cv2.inRange(gray_image, 0, 30)
+    bright_part = cv2.inRange(gray_image, 220, 255)
     faces = face_detector.detectMultiScale(gray_image, 1.3, 5)
+    print("faces")
+    print(faces)
     rects = detector(gray_image, 0)
 
+    total_pixel = np.size(gray_image)
+    dark_pixel = np.sum(dark_part > 0)
+    bright_pixel = np.sum(bright_part > 0)
+
     for (x, y, h, w) in faces:
-        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
         face_width = w
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+
+        if dark_pixel / total_pixel > bright_thres:
+            cv2.putText(image, "Face is underexposed", (50, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 1)
+        if bright_pixel / total_pixel > dark_thres:
+            cv2.putText(image, "Face is overexposed", (50, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 1)
 
         # loop over the face detections
         for rect in rects:
             # determine the facial landmarks for the face region, then
             # convert the facial landmark (x, y)-coordinates to a NumPy
             # array
-
             shape = predictor(gray_image, rect)
             logging.warning(shape)
-            print(shape)
             logging.warning(rect)
-            print(rect)
             shape = face_utils.shape_to_np(shape)
 
             # loop over the (x, y)-coordinates for the facial landmarks
@@ -82,10 +96,8 @@ def face_data(image):
 ref_image = cv2.imread("Testing/Ref_image.png")
 ref_image_face_width = face_data(ref_image)
 focal_length_num = focal_length(known_distance, known_width, ref_image_face_width)
-print(focal_length_num)
 
 while True:
-
     # Note: underscore in python can be used as a variable
     _, frame = cap.read()
     face_data_with_frame = face_data(frame)
@@ -93,7 +105,7 @@ while True:
     # finding the distance - calling the distance function
     if face_data_with_frame != 0:
         dist = distance_finder(focal_length_num, known_width, face_data_with_frame)
-        cv2.putText(frame, f"Distance = {dist}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2)
+        cv2.putText(frame, f"Distance = {dist}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 1)
 
     cv2.imshow("frame", frame)
     if cv2.waitKey(1) == ord("q"):
