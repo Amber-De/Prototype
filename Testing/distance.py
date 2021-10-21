@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 import argparse
 import dlib
 import logging
@@ -49,6 +48,7 @@ def face_data(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     dark_part = cv2.inRange(gray_image, 0, 30)
     bright_part = cv2.inRange(gray_image, 220, 255)
+
     faces = face_detector.detectMultiScale(gray_image, 1.3, 5)
     print("faces")
     print(faces)
