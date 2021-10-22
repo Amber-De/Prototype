@@ -9,18 +9,20 @@ ap.add_argument("-p", "--shape-predictor", required=True,
                 help="path to facial landmark predictor")
 args = vars(ap.parse_args())
 
-# initialize dlib's face detector (HOG-based) and then create
+# initializing dlib's face detector (HOG-based) and then creating
 # the facial landmark predictor
 print("[INFO] loading facial landmark predictor...")
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(args["shape_predictor"])
 
+# Declaring the least bright/dark it can be
 bright_thres = 0.5
 dark_thres = 0.4
 
 
+# coordinates in a np array function
 def landmarks_to_np(landmarks, dtype="int"):
-    num = landmarks.num_parts
+    num =  landmarks.num_parts
 
     # initialise the list of (x,y) coordinates
     coords = np.zeros((num, 2), dtype=dtype)
@@ -34,14 +36,20 @@ def landmarks_to_np(landmarks, dtype="int"):
     return coords
 
 
-def get_centers(image, landmarks):
-    EYE_LEFT_OUTER = landmarks[2]
-    EYE_LEFT_INNER = landmarks[3]
-    EYE_RIGHT_OUTER = landmarks[0]
-    EYE_RIGHT_INNER = landmarks[1]
+def get_centers(img, landmarks):
+    EYE_LEFT_OUTER = landmarks[36]
+    print(EYE_LEFT_OUTER)
+    EYE_LEFT_INNER = landmarks[39]
+    print(EYE_LEFT_INNER)
+    EYE_RIGHT_OUTER = landmarks[42]
+    print(EYE_RIGHT_OUTER)
+    EYE_RIGHT_INNER = landmarks[45]
+    print(EYE_RIGHT_INNER)
 
-    x = (landmarks[0:4]).T[0]
-    y = (landmarks[0:4]).T[1]
+    x = ((landmarks[36:40]).T)[0]
+    print(x)
+    y = ((landmarks[42:46]).T)[1]
+    print(y)
     A = np.vstack([x, np.ones(len(x))]).T
     k, b = np.linalg.lstsq(A, y, rcond=None)[0]
 
@@ -51,8 +59,9 @@ def get_centers(image, landmarks):
     RIGHT_EYE_CENTER = np.array([np.int32(x_right), np.int32(x_right * k + b)])
 
     pts = np.vstack((LEFT_EYE_CENTER, RIGHT_EYE_CENTER))
-    cv2.polylines(image, [pts], False, (255, 0, 0), 1)
-    cv2.circle(image, (LEFT_EYE_CENTER[0], LEFT_EYE_CENTER[1]), 3, (0, 0, 255), -1)
+    cv2.polylines(img, [pts], False, (255, 0, 0), 1)  # 画回归线
+    cv2.circle(img, (LEFT_EYE_CENTER[0], LEFT_EYE_CENTER[1]), 3, (0, 0, 255), -1)
+    cv2.circle(img, (RIGHT_EYE_CENTER[0], RIGHT_EYE_CENTER[1]), 3, (0, 0, 255), -1)
 
     return LEFT_EYE_CENTER, RIGHT_EYE_CENTER
 
@@ -62,7 +71,7 @@ def getaligned_face(image, left, right):
     desired_h = 256
     desired_dist = desired_w * 0.5
 
-    eyesCenter = ((left[0] + right[0])*0.5, (left[1] + right[1]) * 0.5)
+    eyesCenter = ((left[0] + right[0]) * 0.5, (left[1] + right[1]) * 0.5)
     dx = right[0] - left[0]
     dy = right[1] - left[1]
     distance = np.sqrt(dx * dx + dy * dy)
@@ -169,7 +178,6 @@ while True:
                         (0, 255, 0), 2)
 
             # Inner Canthus localisation
-
             # loop over the (x, y)-coordinates for the facial landmarks
             # and draw them on the image
             pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
