@@ -38,18 +38,12 @@ def landmarks_to_np(landmarks, dtype="int"):
 
 def get_centers(img, landmarks):
     EYE_LEFT_OUTER = landmarks[36]
-    print(EYE_LEFT_OUTER)
     EYE_LEFT_INNER = landmarks[39]
-    print(EYE_LEFT_INNER)
     EYE_RIGHT_OUTER = landmarks[42]
-    print(EYE_RIGHT_OUTER)
     EYE_RIGHT_INNER = landmarks[45]
-    print(EYE_RIGHT_INNER)
 
     x = ((landmarks[36:40]).T)[0]
-    print(x)
     y = ((landmarks[42:46]).T)[1]
-    print(y)
     A = np.vstack([x, np.ones(len(x))]).T
     k, b = np.linalg.lstsq(A, y, rcond=None)[0]
 
@@ -121,13 +115,11 @@ def eyeglass(image):
     measure2 = sum(sum(roi_2 / 255)) / (np.shape(roi_2)[0] * np.shape(roi_2)[1])
     measure = measure1 * 0.3 + measure2 * 0.7
 
-    print(measure)
 
     if measure > 0.15:
         judge = True
     else:
         judge = False
-    print(judge)
     return judge
 
 
@@ -162,8 +154,8 @@ while True:
             if bright_pixel / total_pixel > dark_thres:
                 cv2.putText(img, "Face is overexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 1)
 
-            shape = predictor(gray, rect)
-            shape = face_utils.shape_to_np(shape)
+        shape = predictor(gray, rect)
+        shape = face_utils.shape_to_np(shape)
 
         LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(img, shape)
         aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
