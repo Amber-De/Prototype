@@ -1,19 +1,40 @@
+# import the necessary packages
+import logging
 import dlib
-import cv2
+import time
 import numpy as np
 import argparse
+import cv2
+import imutils
+from imutils.video import VideoStream
 from imutils import face_utils
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-p", "--shape-predictor", required=True,
                 help="path to facial landmark predictor")
+ap.add_argument("-pt", "--prototxt", required=True,
+                help="path to Caffe 'deploy' prototxt file")
+ap.add_argument("-m", "--model", required=True,
+                help="path to Caffe pre-trained model")
+ap.add_argument("-c", "--confidence", type=float, default=0.5,
+                help="minimum probability to filter weak detections")
 args = vars(ap.parse_args())
 
-# initializing dlib's face detector (HOG-based) and then creating
+# load our serialized model from disk
+print("[INFO] loading model...")
+net = cv2.dnn.readNetFromCaffe(args["prototxt"], args["model"])
+
+# initialize dlib's face detector (HOG-based) and then create
 # the facial landmark predictor
 print("[INFO] loading facial landmark predictor...")
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(args["shape_predictor"])
+
+# initialize the video stream and allow the camera sensor to warm up
+print("[INFO] starting video stream...")
+vs = VideoStream(src=0).start()
+# allowing the camera to warm up for 2 seconds
+time.sleep(2.0)
 
 # Declaring the least bright/dark it can be
 bright_thres = 0.5
@@ -22,7 +43,7 @@ dark_thres = 0.4
 
 # coordinates in a np array function
 def landmarks_to_np(landmarks, dtype="int"):
-    num =  landmarks.num_parts
+    num = landmarks.num_parts
 
     # initialise the list of (x,y) coordinates
     coords = np.zeros((num, 2), dtype=dtype)
@@ -115,7 +136,6 @@ def eyeglass(image):
     measure2 = sum(sum(roi_2 / 255)) / (np.shape(roi_2)[0] * np.shape(roi_2)[1])
     measure = measure1 * 0.3 + measure2 * 0.7
 
-
     if measure > 0.15:
         judge = True
     else:
@@ -123,66 +143,96 @@ def eyeglass(image):
     return judge
 
 
-cap = cv2.VideoCapture(0)
-face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-
+# loop over the frames from the video stream
 while True:
-    _, img = cap.read()
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # reading the frame from the video stream
+    frame = vs.read()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # detect faces in the grayscale frame
+    rects = detector(gray, 0)
+
     dark_part = cv2.inRange(gray, 0, 30)
     bright_part = cv2.inRange(gray, 220, 255)
-    faces = face_detector.detectMultiScale(gray, 1.3, 5)
-    rects = detector(gray, 1)
 
-    for (x, y, h, w) in faces:
-        # Light Exposure
-        total_pixel = np.size(gray)
-        dark_pixel = np.sum(dark_part > 0)
-        bright_pixel = np.sum(bright_part > 0)
+    # grab the frame dimensions and convert it to a blob
+    (h, w) = frame.shape[:2]
+    # creating a blob
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
+                                 (300, 300), (104.0, 177.0, 123.0))
+    # pass the blob through the network and obtain the detections and
+    # predictions
+    net.setInput(blob)
+    detections = net.forward()
+
+    for i in range(0, detections.shape[2]):
+        # extracting the confidence/probability associated with the prediction
+        confidence = detections[0, 0, i, 2]
+
+        # filtering out weak detection by ensuring the 'confidence' is greater than 0.5 in our case
+        if confidence < args["confidence"]:
+            continue
+
+        # compute the (x,y)-co-ordinates of the bounding box for the object
+        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+
+        (startX, startY, endX, endY) = box.astype("int")
+
+        # drawing the bounding face of the face including the probability
+        text = "{:.1f}%".format(confidence * 100)
+        y = startY - 10 if startY - 10 > 10 else startY + 10
+        cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
+        cv2.putText(frame, text, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
         for rect in rects:
+            shape = predictor(gray, rect)
+            shape = face_utils.shape_to_np(shape)
+
             x_face = rect.left()
             y_face = rect.top()
             w_face = rect.right() - x_face
             h_face = rect.bottom() - y_face
 
-            cv2.rectangle(img, (x_face, y_face), (x_face + w_face, y_face + h_face), (0, 255, 0), 2)
-            cv2.circle(img, (x, y), 2, (0, 0, 255), -1)
+            for (x, y) in shape:
+                # Light Exposure
+                total_pixel = np.size(gray)
+                dark_pixel = np.sum(dark_part > 0)
+                bright_pixel = np.sum(bright_part > 0)
 
-            if dark_pixel / total_pixel > bright_thres:
-                cv2.putText(img, "Face is underexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 1)
-            if bright_pixel / total_pixel > dark_thres:
-                cv2.putText(img, "Face is overexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 1)
+                if dark_pixel / total_pixel > bright_thres:
+                    cv2.putText(frame, "Face is underexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80,
+                                (255, 255, 255), 1)
+                if bright_pixel / total_pixel > dark_thres:
+                    cv2.putText(frame, "Face is overexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80,
+                                (255, 255, 255), 1)
 
-        shape = predictor(gray, rect)
-        shape = face_utils.shape_to_np(shape)
+                LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape)
+                aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
 
-        LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(img, shape)
-        aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
+                # Glasses Prediction
+                judge = eyeglass(aligned_face)
+                if judge:
+                    cv2.putText(frame, "Please remove Glasses", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                (0, 255, 0), 2)
+                else:
+                    cv2.putText(frame, "No Glasses detected", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                (0, 255, 0), 2)
 
-        # Glasses Prediction
-        judge = eyeglass(aligned_face)
-        if judge:
-            cv2.putText(img, "Please remove Glasses", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (0, 255, 0), 2)
-        else:
-            cv2.putText(img, "No Glasses detected", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (0, 255, 0), 2)
+                    # Inner Canthus localisation
+                    # loop over the (x, y)-coordinates for the facial landmarks
+                    # and draw them on the image
+                    pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
+                    pts = pts.reshape((-1, 1, 2))
+                    isClosed = True
 
-            # Inner Canthus localisation
-            # loop over the (x, y)-coordinates for the facial landmarks
-            # and draw them on the image
-            pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
-            pts = pts.reshape((-1, 1, 2))
-            isClosed = True
+                    color = (0, 0, 255)
+                    thickness = 1
 
-            color = (0, 0, 255)
-            thickness = 1
+                    image = cv2.polylines(frame, [pts], isClosed, color, thickness)
 
-            image = cv2.polylines(img, [pts], isClosed, color, thickness)
-
-    cv2.imshow("Result", img)
+    cv2.imshow("Result", frame)
     if cv2.waitKey(1) == ord("q"):
         break
-cap.release()
 cv2.destroyAllWindows()
+vs.stop()
