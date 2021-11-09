@@ -63,8 +63,8 @@ def get_centers(img, landmarks):
     EYE_RIGHT_OUTER = landmarks[42]
     EYE_RIGHT_INNER = landmarks[45]
 
-    x = ((landmarks[36:40]).T)[0]
-    y = ((landmarks[42:46]).T)[1]
+    x = (landmarks[36:40]).T[0]
+    y = (landmarks[42:46]).T[1]
     A = np.vstack([x, np.ones(len(x))]).T
     k, b = np.linalg.lstsq(A, y, rcond=None)[0]
 
@@ -176,12 +176,16 @@ while True:
         box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
 
         (startX, startY, endX, endY) = box.astype("int")
+        faceWidth = endX - startX
+        frameWidth = w
+        total = (faceWidth / frameWidth) * 100
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
-        cv2.putText(frame, text, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+        #cv2.putText(frame, text, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+        cv2.putText(frame, str(total), (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
         for rect in rects:
             shape = predictor(gray, rect)
