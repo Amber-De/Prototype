@@ -33,8 +33,10 @@ predictor = dlib.shape_predictor(args["shape_predictor"])
 # initialize the video stream and allow the camera sensor to warm up
 print("[INFO] starting video stream...")
 vs = VideoStream(src=0).start()
+vs1 = VideoStream(src=0).start()
 # allowing the camera to warm up for 2 seconds
 time.sleep(2.0)
+
 
 # Declaring the least bright/dark it can be
 bright_thres = 0.5
@@ -146,8 +148,13 @@ def eyeglass(image):
 # loop over the frames from the video stream
 while True:
     # reading the frame from the video stream
-    frame = vs.read()
+    one = vs.read()
+    frame1 = vs.read()
+
+    frame = np.hstack((one,frame1))
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
     # detect faces in the grayscale frame
     rects = detector(gray, 0)
 
@@ -159,6 +166,7 @@ while True:
     # creating a blob
     blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
                                  (300, 300), (104.0, 177.0, 123.0))
+
     # pass the blob through the network and obtain the detections and
     # predictions
     net.setInput(blob)
@@ -184,7 +192,6 @@ while True:
         text = "{:.1f}%".format(confidence * 100)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
-        #cv2.putText(frame, text, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
         cv2.putText(frame, str(total), (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
         for rect in rects:
