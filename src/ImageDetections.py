@@ -10,7 +10,7 @@ from imutils.video import VideoStream
 from imutils import face_utils
 
 ap = argparse.ArgumentParser()
-ap.add_argument("-p", "--image", required=True,
+ap.add_argument("-i", "--image", required=True,
                 help="path to image")
 ap.add_argument("-p", "--shape-predictor", required=True,
                 help="path to facial landmark predictor")
@@ -237,6 +237,6 @@ while True:
 
                     image = cv2.polylines(frame, [pts], isClosed, color, thickness)
 
-# show the output image
-cv2.imshow("Output", frame)
-cv2.waitKey(0)
+    # show the output image
+    cv2.imshow("Output", frame)
+    cv2.waitKey(0)
