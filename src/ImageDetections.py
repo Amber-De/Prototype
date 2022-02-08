@@ -12,13 +12,17 @@ from imutils import face_utils
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
                 help="path to image")
+ap.add_argument("-ii", "--image2", required=True,
+                help="path to image")
 ap.add_argument("-p", "--shape-predictor", required=True,
                 help="path to facial landmark predictor")
 ap.add_argument("-pt", "--prototxt", required=True,
                 help="path to Caffe 'deploy' prototxt file")
 ap.add_argument("-m", "--model", required=True,
                 help="path to Caffe pre-trained model")
-ap.add_argument("-c", "--confidence", type=float, default=0.5,
+# It is noted that with 0.5 confidence level the glasses and inner canthus are not detected, whilst with 0.3 they are
+# detected
+ap.add_argument("-c", "--confidence", type=float, default=0.3,
                 help="minimum probability to filter weak detections")
 args = vars(ap.parse_args())
 
@@ -32,26 +36,9 @@ print("[INFO] loading facial landmark predictor...")
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(args["shape_predictor"])
 
-
 # Declaring the least bright/dark it can be
 bright_thres = 0.5
 dark_thres = 0.4
-
-
-# coordinates in a np array function
-def landmarks_to_np(landmarks, dtype="int"):
-    num = landmarks.num_parts
-
-    # initialise the list of (x,y) coordinates
-    coords = np.zeros((num, 2), dtype=dtype)
-
-    # loop  over the 68 facial landmarks and converting them to
-    # a 2-tuple of (x,y)-ordinates
-    for i in range(0, num):
-        coords[i] = (landmarks.part(i).x, landmarks.part(i).y)
-
-    # returning the list of coordinates
-    return coords
 
 
 def get_centers(img, landmarks):
@@ -144,9 +131,10 @@ def eyeglass(image):
 while True:
     # reading the frame from the video stream
     image = cv2.imread(args["image"])
-    image1 = cv2.imread(args["image"])
+    image1 = cv2.imread(args["image2"])
 
-    frame = np.hstack((image,image1))
+    newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
+    frame = np.hstack((image, newimage))
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -171,7 +159,7 @@ while True:
         # extracting the confidence/probability associated with the prediction
         confidence = detections[0, 0, i, 2]
 
-        # filtering out weak detection by ensuring the 'confidence' is greater than 0.5 in our case
+        # filtering out weak detection by ensuring the 'confidence' is greater than 0.3 in our case
         if confidence < args["confidence"]:
             continue
 
@@ -182,12 +170,22 @@ while True:
         faceWidth = endX - startX
         frameWidth = w
         total = (faceWidth / frameWidth) * 100
+        rounded = round(total)
+
+        # setting the threshold to 16
+        if rounded < 16:
+            cv2.putText(frame, "Too close to camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                        (0, 255, 0), 2)
+        elif rounded > 16:
+            cv2.putText(frame, "Too far from camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                        (0, 255, 0), 2)
+        else:
+            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
-        cv2.putText(frame, str(total), (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
         for rect in rects:
             shape = predictor(gray, rect)
@@ -205,11 +203,14 @@ while True:
                 bright_pixel = np.sum(bright_part > 0)
 
                 if dark_pixel / total_pixel > bright_thres:
-                    cv2.putText(frame, "Face is underexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80,
-                                (255, 255, 255), 1)
-                if bright_pixel / total_pixel > dark_thres:
-                    cv2.putText(frame, "Face is overexposed", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.80,
-                                (255, 255, 255), 1)
+                    cv2.putText(frame, "Face is underexposed", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                (0, 255, 0), 2)
+                elif bright_pixel / total_pixel > dark_thres:
+                    cv2.putText(frame, "Face is overexposed", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                (0, 255, 0), 2)
+                else:
+                    cv2.putText(frame, "Good Lighting", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                (0, 255, 0), 2)
 
                 LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape)
                 aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
@@ -217,13 +218,16 @@ while True:
                 # Glasses Prediction
                 judge = eyeglass(aligned_face)
                 if judge:
-                    cv2.putText(frame, "Please remove Glasses", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7,
+                    cv2.putText(frame, "Please remove Glasses", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                                1.2,
                                 (0, 255, 0), 2)
                 else:
-                    cv2.putText(frame, "No Glasses detected", (x_face + 100, y_face - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7,
+                    cv2.putText(frame, "No Glasses detected", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                                1.2,
                                 (0, 255, 0), 2)
+
+                    # (x_face + 100, y_face - 10)
+                    # (x_face + 100, y_face - 10)
 
                     # Inner Canthus localisation
                     # loop over the (x, y)-coordinates for the facial landmarks
@@ -233,7 +237,7 @@ while True:
                     isClosed = True
 
                     color = (0, 0, 255)
-                    thickness = 1
+                    thickness = 2
 
                     image = cv2.polylines(frame, [pts], isClosed, color, thickness)
 
