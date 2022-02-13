@@ -1,9 +1,7 @@
 # import the necessary packages
-from imutils import face_utils
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.models import load_model
-import logging
 import dlib
 import os
 import numpy as np
@@ -50,6 +48,22 @@ model = load_model(args["model"])
 # Declaring the least bright/dark it can be
 bright_thres = 0.5
 dark_thres = 0.4
+
+
+# coordinates in a np array function
+def landmarks_to_np(landmarks, dtype="int"):
+    # 获取landmarks的数量
+    num = landmarks.num_parts
+
+    # initialize the list of (x, y)-coordinates
+    coords = np.zeros((num, 2), dtype=dtype)
+
+    # loop over the 68 facial landmarks and convert them
+    # to a 2-tuple of (x, y)-coordinates
+    for i in range(0, num):
+        coords[i] = (landmarks.part(i).x, landmarks.part(i).y)
+    # return the list of (x, y)-coordinates
+    return coords
 
 
 # our function
@@ -261,13 +275,14 @@ while True:
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
         for rect in rects:
-            shape = predictor(gray, rect)
-            shape = face_utils.shape_to_np(shape)
 
             x_face = rect.left()
             y_face = rect.top()
             w_face = rect.right() - x_face
             h_face = rect.bottom() - y_face
+
+            shape = predictor(gray, rect)
+            shape = face_utils.shape_to_np(shape)
 
             for (x, y) in shape:
                 # Light Exposure
@@ -295,26 +310,6 @@ while True:
                     cv2.putText(frame, "Please remove Glasses", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
                                 (0, 255, 0), 2)
-
-                    # Mask detection
-
-                    # loop over the detected face locations and their corresponding
-                    # locations
-                    for (box, pred) in zip(locs, preds):
-                        # unpack the bounding box and predictions
-                        (startX, startY, endX, endY) = box
-                        (mask, withoutMask) = pred
-
-                        # determine the class label and color we'll use to draw
-                        # the bounding box and text
-                        if mask > withoutMask:
-                            cv2.putText(frame, "Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        1.2,
-                                        (0, 255, 0), 2)
-                        else:
-                            cv2.putText(frame, "No Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        1.2,
-                                        (0, 255, 0), 2)
                 else:
                     cv2.putText(frame, "No Glasses detected", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
@@ -329,12 +324,16 @@ while True:
                     # and draw them on the image
                     pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
                     pts = pts.reshape((-1, 1, 2))
-                    isClosed = True
+                    isClosed = True  # if the polygon is a closed shape
 
                     color = (0, 0, 255)
                     thickness = 2
 
                     image = cv2.polylines(frame, [pts], isClosed, color, thickness)
+                    image = cv2.fillPoly(frame, [pts], color)
+
+                    # for filled pixels in polygon print coordinates
+                    #filled = np.array(cv2.fillPoly(frame, [pts], color))
 
                     # Mask detection
 
