@@ -1,34 +1,34 @@
 # import the necessary packages
+from imutils import face_utils
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from tensorflow.keras.preprocessing.image import img_to_array
+from tensorflow.keras.models import load_model
 import logging
 import dlib
-import time
+import os
 import numpy as np
 import argparse
 import cv2
-import imutils
-from imutils.video import VideoStream
 from imutils import face_utils
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
                 help="path to image")
-ap.add_argument("-ii", "--image2", required=True,
+ap.add_argument("-ii", "--image2", required=False,
                 help="path to image")
+ap.add_argument("-f", "--face", type=str,
+                default="/Users/amberdebono/PycharmProjects/Prototype/src",
+                help="path to face detector model directory")
+ap.add_argument("-m", "--model", type=str,
+                default="/Users/amberdebono/PycharmProjects/Prototype/src/mask_detector.model",
+                help="path to trained face mask detector model")
 ap.add_argument("-p", "--shape-predictor", required=True,
                 help="path to facial landmark predictor")
-ap.add_argument("-pt", "--prototxt", required=True,
-                help="path to Caffe 'deploy' prototxt file")
-ap.add_argument("-m", "--model", required=True,
-                help="path to Caffe pre-trained model")
 # It is noted that with 0.5 confidence level the glasses and inner canthus are not detected, whilst with 0.3 they are
 # detected
 ap.add_argument("-c", "--confidence", type=float, default=0.3,
                 help="minimum probability to filter weak detections")
 args = vars(ap.parse_args())
-
-# load our serialized model from disk
-print("[INFO] loading model...")
-net = cv2.dnn.readNetFromCaffe(args["prototxt"], args["model"])
 
 # initialize dlib's face detector (HOG-based) and then create
 # the facial landmark predictor
@@ -36,9 +36,79 @@ print("[INFO] loading facial landmark predictor...")
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(args["shape_predictor"])
 
+# load our serialized face detector model from disk
+print("[INFO] loading face detector model...")
+prototxtPath = os.path.sep.join([args["face"], "deploy.prototxt.txt"])
+weightsPath = os.path.sep.join([args["face"],
+                                "res10_300x300_ssd_iter_140000.caffemodel"])
+net = cv2.dnn.readNet(prototxtPath, weightsPath)
+
+# load the face mask detector model from disk
+print("[INFO] loading face mask detector model...")
+model = load_model(args["model"])
+
 # Declaring the least bright/dark it can be
 bright_thres = 0.5
 dark_thres = 0.4
+
+
+# our function
+def detect_and_predict_mask(frame, net, model):
+    # grab the dimensions of the frame and then construct a blob
+    # from it
+    (h, w) = frame.shape[:2]
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
+                                 (104.0, 177.0, 123.0))
+
+    # initialize our list of faces, their corresponding locations,
+    # and the list of predictions from our face mask network
+    faces = []
+    locs = []
+    preds = []
+
+    # loop over the detections
+    for i in range(0, detections.shape[2]):
+        # extract the confidence (i.e., probability) associated with
+        # the detection
+        confidence = detections[0, 0, i, 2]
+
+        # filter out weak detections by ensuring the confidence is
+        # greater than the minimum confidence
+        if confidence > args["confidence"]:
+            # compute the (x, y)-coordinates of the bounding box for
+            # the object
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+
+            # ensure the bounding boxes fall within the dimensions of
+            # the frame
+            (startX, startY) = (max(0, startX), max(0, startY))
+            (endX, endY) = (min(w - 1, endX), min(h - 1, endY))
+
+            # extract the face ROI, convert it from BGR to RGB channel
+            # ordering, resize it to 224x224, and preprocess it
+            face = frame[startY:endY, startX:endX]
+            face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+            face = cv2.resize(face, (224, 224))
+            face = img_to_array(face)
+            face = preprocess_input(face)
+
+            # add the face and bounding boxes to their respective
+            # lists
+            faces.append(face)
+            locs.append((startX, startY, endX, endY))
+
+    # only make a predictions if at least one face was detected
+    if len(faces) > 0:
+        # for faster inference we'll make batch predictions on *all*
+        # faces at the same time rather than one-by-one predictions
+        # in the above `for` loop
+        faces = np.array(faces, dtype="float32")
+        preds = model.predict(faces, batch_size=32)
+
+    # return a 2-tuple of the face locations and their corresponding
+    # locations
+    return (locs, preds)
 
 
 def get_centers(img, landmarks):
@@ -127,9 +197,9 @@ def eyeglass(image):
     return judge
 
 
-# loop over the frames from the video stream
+# loop over the frames
 while True:
-    # reading the frame from the video stream
+    # reading the frames
     image = cv2.imread(args["image"])
     image1 = cv2.imread(args["image2"])
 
@@ -155,6 +225,8 @@ while True:
     net.setInput(blob)
     detections = net.forward()
 
+    (locs, preds) = detect_and_predict_mask(frame, net, model)
+
     for i in range(0, detections.shape[2]):
         # extracting the confidence/probability associated with the prediction
         confidence = detections[0, 0, i, 2]
@@ -172,7 +244,7 @@ while True:
         total = (faceWidth / frameWidth) * 100
         rounded = round(total)
 
-        # setting the threshold to 16
+        # setting the threshold to 16 for distance
         if rounded < 16:
             cv2.putText(frame, "Too close to camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         (0, 255, 0), 2)
@@ -180,7 +252,8 @@ while True:
             cv2.putText(frame, "Too far from camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         (0, 255, 0), 2)
         else:
-            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.2, (0, 255, 0), 2)
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
@@ -218,9 +291,30 @@ while True:
                 # Glasses Prediction
                 judge = eyeglass(aligned_face)
                 if judge:
+                    # if glasses are detected then the inner canthus will not be detected and not even the mask.
                     cv2.putText(frame, "Please remove Glasses", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
                                 (0, 255, 0), 2)
+
+                    # Mask detection
+
+                    # loop over the detected face locations and their corresponding
+                    # locations
+                    for (box, pred) in zip(locs, preds):
+                        # unpack the bounding box and predictions
+                        (startX, startY, endX, endY) = box
+                        (mask, withoutMask) = pred
+
+                        # determine the class label and color we'll use to draw
+                        # the bounding box and text
+                        if mask > withoutMask:
+                            cv2.putText(frame, "Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                                        1.2,
+                                        (0, 255, 0), 2)
+                        else:
+                            cv2.putText(frame, "No Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                                        1.2,
+                                        (0, 255, 0), 2)
                 else:
                     cv2.putText(frame, "No Glasses detected", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
@@ -230,6 +324,7 @@ while True:
                     # (x_face + 100, y_face - 10)
 
                     # Inner Canthus localisation
+
                     # loop over the (x, y)-coordinates for the facial landmarks
                     # and draw them on the image
                     pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
@@ -241,6 +336,34 @@ while True:
 
                     image = cv2.polylines(frame, [pts], isClosed, color, thickness)
 
+                    # Mask detection
+
+                    # loop over the detected face locations and their corresponding
+                    # locations
+                    for (box, pred) in zip(locs, preds):
+                        # unpack the bounding box and predictions
+                        (startX, startY, endX, endY) = box
+                        (mask, withoutMask) = pred
+
+                        # determine the class label and color we'll use to draw
+                        # the bounding box and text
+                        if mask > withoutMask:
+                            cv2.putText(frame, "Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                                        1.2,
+                                        (0, 255, 0), 2)
+                        else:
+                            cv2.putText(frame, "No Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                                        1.2,
+                                        (0, 255, 0), 2)
+
     # show the output image
     cv2.imshow("Output", frame)
-    cv2.waitKey(0)
+    key = cv2.waitKey(0)
+
+    # if the `q` key was pressed, break from the loop
+    if key == ord("q"):
+        break
+
+        # do a bit of cleanup
+        cv2.destroyAllWindows()
+        vs.stop()
