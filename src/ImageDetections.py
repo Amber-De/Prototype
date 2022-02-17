@@ -8,6 +8,7 @@ import numpy as np
 import argparse
 import cv2
 from imutils import face_utils
+from PIL import Image
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
@@ -329,11 +330,9 @@ while True:
                     color = (0, 0, 255)
                     thickness = 2
 
-                    image = cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    image = cv2.fillPoly(frame, [pts], color)
-
-                    # for filled pixels in polygon print coordinates
-                    #filled = np.array(cv2.fillPoly(frame, [pts], color))
+                    cv2.polylines(frame, [pts], isClosed, color, thickness)
+                    innercanthus = image[418:557, 1045:1231]
+                    # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", innercanthus)
 
                     # Mask detection
 
