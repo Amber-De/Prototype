@@ -51,23 +51,6 @@ bright_thres = 0.5
 dark_thres = 0.4
 
 
-# coordinates in a np array function
-def landmarks_to_np(landmarks, dtype="int"):
-    # 获取landmarks的数量
-    num = landmarks.num_parts
-
-    # initialize the list of (x, y)-coordinates
-    coords = np.zeros((num, 2), dtype=dtype)
-
-    # loop over the 68 facial landmarks and convert them
-    # to a 2-tuple of (x, y)-coordinates
-    for i in range(0, num):
-        coords[i] = (landmarks.part(i).x, landmarks.part(i).y)
-    # return the list of (x, y)-coordinates
-    return coords
-
-
-# our function
 def detect_and_predict_mask(frame, net, model):
     # grab the dimensions of the frame and then construct a blob
     # from it
@@ -212,14 +195,40 @@ def eyeglass(image):
     return judge
 
 
+def perspective_transformation(optical):
+    # height, width
+    rows, cols, ch = optical.shape
+
+    # Optical Image Points
+    pts1 = np.float32([[893, 275], [1537, 257], [925, 1173], [1525, 1125]])
+    # Thermal Image Points
+    pts2 = np.float32([[527, 79], [1023, 74], [527, 595], [1002, 563]])
+
+    M = cv2.getPerspectiveTransform(pts1, pts2)
+    dst = cv2.warpPerspective(optical, M, (cols, rows))
+
+    return dst
+
+
+def inner_canthus_coords_thermal(thermal):
+    hsv = cv2.cvtColor(thermal, cv2.COLOR_BGR2HSV)
+
+
+#  innercanthus = frame[418:563, 1045:1231]
+
+
 # loop over the frames
 while True:
     # reading the frames
-    image = cv2.imread(args["image"])
+    # image = cv2.imread(args["image"])
+    frame = cv2.imread(args["image"])
     image1 = cv2.imread(args["image2"])
 
-    newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
-    frame = np.hstack((image, newimage))
+    # newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
+    # frame = np.hstack((image, newimage))
+    frame = perspective_transformation(frame)
+
+    # frame = cv2.resize(frame, (720,1280), interpolation=cv2.INTER_AREA)
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -239,6 +248,8 @@ while True:
     # predictions
     net.setInput(blob)
     detections = net.forward()
+
+    # Perspective Transformation is done so that the Optical Image and Thermal Image are aligned
 
     (locs, preds) = detect_and_predict_mask(frame, net, model)
 
@@ -261,13 +272,13 @@ while True:
 
         # setting the threshold to 16 for distance
         if rounded < 16:
-            cv2.putText(frame, "Too close to camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+            cv2.putText(frame, "Too close to camera", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         (0, 255, 0), 2)
         elif rounded > 16:
-            cv2.putText(frame, "Too far from camera", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+            cv2.putText(frame, "Too far from camera", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         (0, 255, 0), 2)
         else:
-            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 90), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX,
                         1.2, (0, 255, 0), 2)
 
         # drawing the bounding face of the face including the probability
@@ -326,13 +337,22 @@ while True:
                     pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
                     pts = pts.reshape((-1, 1, 2))
                     isClosed = True  # if the polygon is a closed shape
+                    print(pts)
 
                     color = (0, 0, 255)
                     thickness = 2
 
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    innercanthus = image[418:557, 1045:1231]
-                    # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", innercanthus)
+                    cv2.polylines(image1, [pts], isClosed, color, thickness)
+
+                    # the inner canthus is already being detected in the thermal image. So now i need to crop it.
+                    topleft = shape[21]
+                    bottomleft = shape[39]
+                    topright = shape[22]
+                    bottomright = shape[42]
+
+                    innercanthus = image1[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
+                    #cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", innercanthus)
 
                     # Mask detection
 
@@ -355,7 +375,9 @@ while True:
                                         (0, 255, 0), 2)
 
     # show the output image
-    cv2.imshow("Output", frame)
+    cv2.imshow("Optical Image", frame)
+    cv2.imshow("Thermal Image", image1)
+    cv2.imshow("innercanthus", innercanthus)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
