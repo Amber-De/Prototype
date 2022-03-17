@@ -210,11 +210,23 @@ def perspective_transformation(optical):
     return dst
 
 
-def inner_canthus_coords_thermal(thermal):
-    hsv = cv2.cvtColor(thermal, cv2.COLOR_BGR2HSV)
+def inner_canthus_coords_thermal(image1, shape):
+    # the inner canthus is already being detected in the thermal image. So now i need to crop it.
+    topleft = shape[21]
+    bottomleft = shape[39]
+    topright = shape[22]
+    bottomright = shape[42]
 
+    innercanthus = image1[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
+    hsv = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2HSV)
+    h,s,v = cv2.split(hsv)
+   # v = cv2.GaussianBlur(v, (41, 41), 0)
 
-#  innercanthus = frame[418:563, 1045:1231]
+    # perform a naive attempt to find the (x, y) coordinates of
+    # the area of the image with the largest intensity value
+    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(v)
+    cv2.circle(v, maxLoc, 10, (255, 0, 0), 2)
+    cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", v)
 
 
 # loop over the frames
@@ -345,14 +357,7 @@ while True:
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
                     cv2.polylines(image1, [pts], isClosed, color, thickness)
 
-                    # the inner canthus is already being detected in the thermal image. So now i need to crop it.
-                    topleft = shape[21]
-                    bottomleft = shape[39]
-                    topright = shape[22]
-                    bottomright = shape[42]
-
-                    innercanthus = image1[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
-                    #cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", innercanthus)
+                    inner_canthus_coords_thermal(image1, shape)
 
                     # Mask detection
 
@@ -377,7 +382,6 @@ while True:
     # show the output image
     cv2.imshow("Optical Image", frame)
     cv2.imshow("Thermal Image", image1)
-    cv2.imshow("innercanthus", innercanthus)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
