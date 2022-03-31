@@ -8,7 +8,7 @@ import numpy as np
 import argparse
 import cv2
 from imutils import face_utils
-from PIL import Image
+import pandas as pd
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
@@ -211,23 +211,42 @@ def perspective_transformation(optical):
 
 
 def inner_canthus_coords_thermal(image1, shape):
-    # the inner canthus is already being detected in the thermal image. So now i need to crop it.
+
     topleft = shape[21]
     bottomleft = shape[39]
     topright = shape[22]
     bottomright = shape[42]
 
+    topleftbar = (1233, 97)
+    bottomleftbar = (1233, 616)
+    toprightbar = (1277, 97)
+    bottomrightbar = (1277, 616)
+
+    # another spot higher than  the inner canthus has been found -> on the side of the forehead.
     innercanthus = image1[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
-    hsv = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2HSV)
-    h,s,v = cv2.split(hsv)
-   # v = cv2.GaussianBlur(v, (41, 41), 0)
+    bar = image1[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
+
+    gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
+    gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
     # perform a naive attempt to find the (x, y) coordinates of
     # the area of the image with the largest intensity value
-    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(v)
-    cv2.circle(v, maxLoc, 10, (255, 0, 0), 2)
-    cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/innercanthus.png", v)
+    (minVal1, maxVal1, minLoc1, maxLoc1) = cv2.minMaxLoc(gray_innercanthus)
+    print("InnerCanthus: ", maxVal1)
 
+    cv2.circle(gray_innercanthus, maxLoc1, 5, (255, 0, 0), 2)
+
+    #gray_innercanthus[maxLoc1] = (0,0,255)
+    cv2.imshow("Inner Canthus", gray_innercanthus)
+    cv2.imshow("Bar", gray_bar)
+
+    xy_coords = np.flip(np.column_stack(np.where(gray_bar == maxVal1)), axis=1)
+    cv2.line(gray_bar, (0, xy_coords[0][1]), (gray_bar.shape[1], xy_coords[0][1]), 0, 3)
+    cv2.imshow("Bar", gray_bar)
+
+    cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/GrayBar.png", gray_bar)
+
+    print(xy_coords)
 
 # loop over the frames
 while True:
@@ -356,6 +375,13 @@ while True:
 
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
                     cv2.polylines(image1, [pts], isClosed, color, thickness)
+
+                    grayImage = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+                    cropped = grayImage[rect.top(): rect.bottom(), rect.left(): rect.right()]
+                    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(cropped)
+                    cv2.circle(cropped, maxLoc, 10, 0, 2)
+                    print(maxVal)
+                    cv2.imshow("Gray Image", cropped)
 
                     inner_canthus_coords_thermal(image1, shape)
 
