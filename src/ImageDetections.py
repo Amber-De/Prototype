@@ -8,12 +8,11 @@ import numpy as np
 import argparse
 import cv2
 from imutils import face_utils
-import pandas as pd
 
 ap = argparse.ArgumentParser()
-ap.add_argument("-i", "--image", required=True,
+ap.add_argument("-i", "--opticalImage", required=True,
                 help="path to image")
-ap.add_argument("-ii", "--image2", required=False,
+ap.add_argument("-ii", "--thermalImage", required=True,
                 help="path to image")
 ap.add_argument("-f", "--face", type=str,
                 default="/Users/amberdebono/PycharmProjects/Prototype/src",
@@ -210,8 +209,7 @@ def perspective_transformation(optical):
     return dst
 
 
-def inner_canthus_coords_thermal(image1, shape):
-
+def inner_canthus_coords_thermal(thermal, shape):
     topleft = shape[21]
     bottomleft = shape[39]
     topright = shape[22]
@@ -223,37 +221,54 @@ def inner_canthus_coords_thermal(image1, shape):
     bottomrightbar = (1277, 616)
 
     # another spot higher than  the inner canthus has been found -> on the side of the forehead.
-    innercanthus = image1[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
-    bar = image1[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
-
+    innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
     gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
+
+    bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
-    # perform a naive attempt to find the (x, y) coordinates of
-    # the area of the image with the largest intensity value
-    (minVal1, maxVal1, minLoc1, maxLoc1) = cv2.minMaxLoc(gray_innercanthus)
-    print("InnerCanthus: ", maxVal1)
+    maxVal, minVal = max_min_temperature_of_bar(gray_bar)
+    calculatingTemperature(gray_bar, gray_innercanthus, maxVal, minVal)
 
-    cv2.circle(gray_innercanthus, maxLoc1, 5, (255, 0, 0), 2)
 
-    #gray_innercanthus[maxLoc1] = (0,0,255)
+def max_min_temperature_of_bar(gray_bar):
+    kernel = np.array([[0, -1, 0],
+                       [-1, 5, -1],
+                       [0, -1, 0]])
+    gray_bar = cv2.filter2D(src=gray_bar, ddepth=-1, kernel=kernel)
+
+    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(gray_bar)
+    cv2.circle(gray_bar, maxLoc, 5, 0, 2)
+    cv2.circle(gray_bar, minLoc, 5, 255, 2)
+
+    return maxVal, minVal
+
+
+def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinValue):
+
+    # Getting the highest intensity pixel of the inner canthus in grayscale
+    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(gray_innercanthus)
+    cv2.circle(gray_innercanthus, maxLoc, 5, (255, 0, 0), 2)
     cv2.imshow("Inner Canthus", gray_innercanthus)
-    cv2.imshow("Bar", gray_bar)
 
-    xy_coords = np.flip(np.column_stack(np.where(gray_bar == maxVal1)), axis=1)
-    cv2.line(gray_bar, (0, xy_coords[0][1]), (gray_bar.shape[1], xy_coords[0][1]), 0, 3)
-    cv2.imshow("Bar", gray_bar)
+    # Getting all x,y co-ordinates which have the value as 226.0 in the graybar
+    xy_coords = np.flip(np.column_stack(np.where(gray_bar == maxVal)), axis=1)
+    # Gray Bar shape is the size of the image - 44 x 519
+    cv2.line(gray_bar, (0, xy_coords[0][1]), (gray_bar.shape[1], xy_coords[0][1]), 0, 1)
 
-    cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/src/GrayBar.png", gray_bar)
+    # Temperature Calculation
+    # difference = max - min
+    # degrees_per_pixel = difference / gray_bar.shape[0]  # rows
+    # pixel_per_row = degrees_per_pixel * xy_coords[0][1]
+    # temperature = max - pixel_per_row
 
-    print(xy_coords)
 
 # loop over the frames
 while True:
     # reading the frames
     # image = cv2.imread(args["image"])
-    frame = cv2.imread(args["image"])
-    image1 = cv2.imread(args["image2"])
+    frame = cv2.imread(args["opticalImage"])
+    thermal = cv2.imread(args["thermalImage"])
 
     # newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
     # frame = np.hstack((image, newimage))
@@ -368,22 +383,25 @@ while True:
                     pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
                     pts = pts.reshape((-1, 1, 2))
                     isClosed = True  # if the polygon is a closed shape
-                    print(pts)
 
                     color = (0, 0, 255)
                     thickness = 2
 
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    cv2.polylines(image1, [pts], isClosed, color, thickness)
+                    cv2.polylines(thermal, [pts], isClosed, color, thickness)
 
-                    grayImage = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+                    # finding the warmest part of the whole face
+                    grayImage = cv2.cvtColor(thermal, cv2.COLOR_BGR2GRAY)
                     cropped = grayImage[rect.top(): rect.bottom(), rect.left(): rect.right()]
+
+                    # applying gaussian blur to take an area and not the highest pixel onlyh
+                    # croppedgaussian = cv2.GaussianBlur(cropped, (21,21), 0)
+
                     (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(cropped)
                     cv2.circle(cropped, maxLoc, 10, 0, 2)
-                    print(maxVal)
-                    cv2.imshow("Gray Image", cropped)
+                    cv2.imshow("Max Value in the gray face", cropped)
 
-                    inner_canthus_coords_thermal(image1, shape)
+                    inner_canthus_coords_thermal(thermal, shape)
 
                     # Mask detection
 
@@ -406,8 +424,8 @@ while True:
                                         (0, 255, 0), 2)
 
     # show the output image
-    cv2.imshow("Optical Image", frame)
-    cv2.imshow("Thermal Image", image1)
+    # cv2.imshow("Optical Image", frame)
+    # cv2.imshow("Thermal Image", thermal)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
