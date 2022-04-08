@@ -1,4 +1,7 @@
 # import the necessary packages
+import sys
+
+from matplotlib import pyplot as plt
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.models import load_model
@@ -227,8 +230,9 @@ def inner_canthus_coords_thermal(thermal, shape):
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
-    maxVal, minVal = max_min_temperature_of_bar(gray_bar)
-    calculatingTemperature(gray_bar, gray_innercanthus, maxVal, minVal)
+    #maxVal, minVal = max_min_temperature_of_bar(gray_bar)
+    #calculatingTemperature(gray_bar, gray_innercanthus, maxVal, minVal)
+    temperature(innercanthus, bar)
 
 
 def max_min_temperature_of_bar(gray_bar):
@@ -245,7 +249,6 @@ def max_min_temperature_of_bar(gray_bar):
 
 
 def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinValue):
-
     # Getting the highest intensity pixel of the inner canthus in grayscale
     (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(gray_innercanthus)
     cv2.circle(gray_innercanthus, maxLoc, 5, (255, 0, 0), 2)
@@ -261,6 +264,47 @@ def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinVal
     # degrees_per_pixel = difference / gray_bar.shape[0]  # rows
     # pixel_per_row = degrees_per_pixel * xy_coords[0][1]
     # temperature = max - pixel_per_row
+
+
+def temperature(innercanthus, bar):
+    cv2.imshow("inner canthus", innercanthus)
+    cv2.imshow("bar", bar)
+
+    # Inner Canthus Histogram
+    color = ('b', 'g', 'r')
+    for i, col in enumerate(color):
+        histr = cv2.calcHist([innercanthus], [i], None, [256], [0, 256])
+        plt.plot(histr, color=col)
+        plt.xlim([0, 256])
+        plt.title("Inner Canthus")
+    # plt.show()
+
+    r = 519
+    interval = 50
+    i = 0
+    # I don't think this needs to be the max size because I always want to keep the highest correlation between
+    # the two histograms. So what I am doing now is comparing the two distance and always keeping the highest one.
+    smallestDistance = 0
+    smallestindex = 0
+
+    # while i < r - interval: # it is going to have leave a difference of 19 pixels which is very little
+    while i < r:
+
+        cropped = bar[i: i+interval, :]
+        for k, col in enumerate(color):
+            histr2 = cv2.calcHist([cropped], [k], None, [256], [0, 256])
+            plt.plot(histr2, color=col)
+            plt.xlim([0, 256])
+            plt.title("Bar being Cropped")
+
+        distance = cv2.compareHist(histr, histr2, cv2.HISTCMP_CORREL)
+        distance = abs(distance)
+
+        if distance > smallestDistance:
+            smallestDistance = distance
+            smallestindex = i
+
+        i += interval
 
 
 # loop over the frames
