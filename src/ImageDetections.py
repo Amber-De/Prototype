@@ -230,22 +230,8 @@ def inner_canthus_coords_thermal(thermal, shape):
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
-    #maxVal, minVal = max_min_temperature_of_bar(gray_bar)
-    #calculatingTemperature(gray_bar, gray_innercanthus, maxVal, minVal)
+
     temperature(innercanthus, bar)
-
-
-def max_min_temperature_of_bar(gray_bar):
-    kernel = np.array([[0, -1, 0],
-                       [-1, 5, -1],
-                       [0, -1, 0]])
-    gray_bar = cv2.filter2D(src=gray_bar, ddepth=-1, kernel=kernel)
-
-    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(gray_bar)
-    cv2.circle(gray_bar, maxLoc, 5, 0, 2)
-    cv2.circle(gray_bar, minLoc, 5, 255, 2)
-
-    return maxVal, minVal
 
 
 def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinValue):
@@ -269,18 +255,32 @@ def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinVal
 def temperature(innercanthus, bar):
     cv2.imshow("inner canthus", innercanthus)
     cv2.imshow("bar", bar)
+    
+    # OCR
+    max = 37.6
+    min = 19.5
+    difference = max - min
+    value_per_pixel = difference / bar.shape[0] # the no. of loops - rows  (temp of each row)
+    # loops + highest correlation
+    # value per pixel * index for highest correlation  = ans
+    # max - ans = temperature
 
     # Inner Canthus Histogram
-    color = ('b', 'g', 'r')
-    for i, col in enumerate(color):
-        histr = cv2.calcHist([innercanthus], [i], None, [256], [0, 256])
-        plt.plot(histr, color=col)
-        plt.xlim([0, 256])
-        plt.title("Inner Canthus")
-    # plt.show()
+
+    #color = ('b', 'g', 'r')
+    #for i, col in enumerate(color):
+    #    histr = cv2.calcHist([innercanthus], [i], None, [256], [0, 256])
+    #    plt.plot(histr, color=col)
+    #    plt.xlim([0, 256])
+    #    plt.show
+
+    hist = cv2.calcHist([innercanthus], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    hist = cv2.normalize(hist, hist).flatten()
+    plt.plot(hist)
+    plt.show()
 
     r = 519
-    interval = 50
+    interval = 25
     i = 0
     # I don't think this needs to be the max size because I always want to keep the highest correlation between
     # the two histograms. So what I am doing now is comparing the two distance and always keeping the highest one.
@@ -291,14 +291,20 @@ def temperature(innercanthus, bar):
     while i < r:
 
         cropped = bar[i: i+interval, :]
-        for k, col in enumerate(color):
-            histr2 = cv2.calcHist([cropped], [k], None, [256], [0, 256])
-            plt.plot(histr2, color=col)
-            plt.xlim([0, 256])
-            plt.title("Bar being Cropped")
 
-        distance = cv2.compareHist(histr, histr2, cv2.HISTCMP_CORREL)
+        hist2 = cv2.calcHist([cropped], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist2 = cv2.normalize(hist2, hist2).flatten()
+        #for k, col in enumerate(color):
+        #    histr2 = cv2.calcHist([cropped], [k], None, [256], [0, 256])
+
+        #distance = cv2.compareHist(histr, histr2, cv2.HISTCMP_CORREL)
+        distance = cv2.compareHist(hist, hist2, cv2.HISTCMP_CORREL)
         distance = abs(distance)
+
+        #if(i == 326):
+        #    plt.plot(hist2)
+        #    plt.xlim([0, 256])
+        #    plt.show()
 
         if distance > smallestDistance:
             smallestDistance = distance
@@ -306,6 +312,12 @@ def temperature(innercanthus, bar):
 
         i += interval
 
+    print("highest correlation: ", smallestDistance)
+    print("At index: ", smallestindex)
+
+    calc = value_per_pixel * smallestindex
+    temp = max - calc
+    print("Temp: ", temp)
 
 # loop over the frames
 while True:
@@ -432,18 +444,18 @@ while True:
                     thickness = 2
 
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    cv2.polylines(thermal, [pts], isClosed, color, thickness)
+                    #cv2.polylines(thermal, [pts], isClosed, color, thickness)
 
                     # finding the warmest part of the whole face
-                    grayImage = cv2.cvtColor(thermal, cv2.COLOR_BGR2GRAY)
-                    cropped = grayImage[rect.top(): rect.bottom(), rect.left(): rect.right()]
+                    #grayImage = cv2.cvtColor(thermal, cv2.COLOR_BGR2GRAY)
+                    #cropped = grayImage[rect.top(): rect.bottom(), rect.left(): rect.right()]
 
                     # applying gaussian blur to take an area and not the highest pixel onlyh
                     # croppedgaussian = cv2.GaussianBlur(cropped, (21,21), 0)
 
-                    (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(cropped)
-                    cv2.circle(cropped, maxLoc, 10, 0, 2)
-                    cv2.imshow("Max Value in the gray face", cropped)
+                    #(minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(cropped)
+                    #cv2.circle(cropped, maxLoc, 10, 0, 2)
+                    #cv2.imshow("Max Value in the gray face", cropped)
 
                     inner_canthus_coords_thermal(thermal, shape)
 
@@ -479,3 +491,4 @@ while True:
         # do a bit of cleanup
         cv2.destroyAllWindows()
         vs.stop()
+
