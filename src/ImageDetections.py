@@ -276,15 +276,15 @@ def temperature(innercanthus, bar):
 
     hist = cv2.calcHist([innercanthus], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     hist = cv2.normalize(hist, hist).flatten()
-    plt.plot(hist)
-    plt.show()
+    #plt.plot(hist)
+    #plt.show()
 
     r = 519
-    interval = 25
+    interval = 10
     i = 0
     # I don't think this needs to be the max size because I always want to keep the highest correlation between
     # the two histograms. So what I am doing now is comparing the two distance and always keeping the highest one.
-    smallestDistance = 0
+    smallestDistance = 1000000
     smallestindex = 0
 
     # while i < r - interval: # it is going to have leave a difference of 19 pixels which is very little
@@ -298,7 +298,7 @@ def temperature(innercanthus, bar):
         #    histr2 = cv2.calcHist([cropped], [k], None, [256], [0, 256])
 
         #distance = cv2.compareHist(histr, histr2, cv2.HISTCMP_CORREL)
-        distance = cv2.compareHist(hist, hist2, cv2.HISTCMP_CORREL)
+        distance = cv2.compareHist(hist, hist2, cv2.HISTCMP_CHISQR)
         distance = abs(distance)
 
         #if(i == 326):
@@ -306,13 +306,13 @@ def temperature(innercanthus, bar):
         #    plt.xlim([0, 256])
         #    plt.show()
 
-        if distance > smallestDistance:
+        if distance < smallestDistance:
             smallestDistance = distance
             smallestindex = i
 
         i += interval
 
-    print("highest correlation: ", smallestDistance)
+    print("Least distance: ", smallestDistance)
     print("At index: ", smallestindex)
 
     calc = value_per_pixel * smallestindex
