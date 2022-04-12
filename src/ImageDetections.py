@@ -2,6 +2,7 @@
 import sys
 
 from matplotlib import pyplot as plt
+from pytesseract import pytesseract
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.models import load_model
@@ -223,17 +224,26 @@ def inner_canthus_coords_thermal(thermal, shape):
     toprightbar = (1277, 97)
     bottomrightbar = (1277, 616)
 
+    topleft_forehead = (400, 100)
+    bottomleft_forehead = (400, 164)
+    topright_forehead = (767, 100)
+    bottomright_forehead = (767, 164)
+
     # another spot higher than  the inner canthus has been found -> on the side of the forehead.
     innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
     gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
 
+    forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1], bottomleft_forehead[0]:bottomright_forehead[0]]
+
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
+    maxTemp, minTemp = extractTempFromImage(thermal)
+    temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
+    temperature_forehead(forehead_thermal, bar, maxTemp, minTemp)
 
-    temperature(innercanthus, bar)
 
-
+# Another method for calculating temperature
 def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinValue):
     # Getting the highest intensity pixel of the inner canthus in grayscale
     (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(gray_innercanthus)
@@ -252,59 +262,53 @@ def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinVal
     # temperature = max - pixel_per_row
 
 
-def temperature(innercanthus, bar):
-    cv2.imshow("inner canthus", innercanthus)
-    cv2.imshow("bar", bar)
-    
+# Performing OCR
+def extractTempFromImage(thermal):
+    topleft = (1025, 92)
+    bottomleft = (1025, 151)
+    topright = (1146, 92)
+    bottomright = (1146, 151)
+    maxTemp = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
+
+    topleft1 = (1043, 572)
+    bottomleft1 = (1043, 633)
+    topright1 = (1148, 572)
+    bottomright1 = (1148, 633)
+    minTemp = thermal[topleft1[1]:bottomleft1[1], bottomleft1[0]:bottomright1[0]]
+
+    return maxTemp, minTemp
+
+
+def temperature_innercanthus(innercanthus, bar, maxTemp, minTemp):
     # OCR
-    max = 37.6
-    min = 19.5
+    max = pytesseract.image_to_string(maxTemp, config='--psm 6')
+    min = pytesseract.image_to_string(minTemp, config='--psm 6')
+
+    max = float(max)
+    min = float(min)
+
     difference = max - min
-    value_per_pixel = difference / bar.shape[0] # the no. of loops - rows  (temp of each row)
-    # loops + highest correlation
-    # value per pixel * index for highest correlation  = ans
-    # max - ans = temperature
+    value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
 
     # Inner Canthus Histogram
-
-    #color = ('b', 'g', 'r')
-    #for i, col in enumerate(color):
-    #    histr = cv2.calcHist([innercanthus], [i], None, [256], [0, 256])
-    #    plt.plot(histr, color=col)
-    #    plt.xlim([0, 256])
-    #    plt.show
-
     hist = cv2.calcHist([innercanthus], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     hist = cv2.normalize(hist, hist).flatten()
-    #plt.plot(hist)
-    #plt.show()
 
-    r = 519
+    r = bar.shape[0]
     interval = 10
     i = 0
-    # I don't think this needs to be the max size because I always want to keep the highest correlation between
-    # the two histograms. So what I am doing now is comparing the two distance and always keeping the highest one.
     smallestDistance = 1000000
     smallestindex = 0
 
-    # while i < r - interval: # it is going to have leave a difference of 19 pixels which is very little
     while i < r:
 
-        cropped = bar[i: i+interval, :]
+        cropped = bar[i: i + interval, :]
 
         hist2 = cv2.calcHist([cropped], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
         hist2 = cv2.normalize(hist2, hist2).flatten()
-        #for k, col in enumerate(color):
-        #    histr2 = cv2.calcHist([cropped], [k], None, [256], [0, 256])
 
-        #distance = cv2.compareHist(histr, histr2, cv2.HISTCMP_CORREL)
         distance = cv2.compareHist(hist, hist2, cv2.HISTCMP_CHISQR)
         distance = abs(distance)
-
-        #if(i == 326):
-        #    plt.plot(hist2)
-        #    plt.xlim([0, 256])
-        #    plt.show()
 
         if distance < smallestDistance:
             smallestDistance = distance
@@ -318,6 +322,56 @@ def temperature(innercanthus, bar):
     calc = value_per_pixel * smallestindex
     temp = max - calc
     print("Temp: ", temp)
+    # preferably the temperature we do it as a range rather than one number since it is based on 10 rows = 10
+    # temperature variations
+
+
+def temperature_forehead(forehead_thermal, bar, maxTemp, minTemp):
+    # OCR
+    max = pytesseract.image_to_string(maxTemp, config='--psm 6')
+    min = pytesseract.image_to_string(minTemp, config='--psm 6')
+
+    max = float(max)
+    min = float(min)
+
+    difference = max - min
+    value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
+
+    # Forehead Histogram
+    hist = cv2.calcHist([forehead_thermal], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    hist = cv2.normalize(hist, hist).flatten()
+
+    r = bar.shape[0]
+    interval = 10
+    i = 0
+    smallestDistance = 1000000
+    smallestindex = 0
+
+    while i < r:
+
+        cropped = bar[i: i + interval, :]
+
+        hist2 = cv2.calcHist([cropped], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist2 = cv2.normalize(hist2, hist2).flatten()
+
+        distance = cv2.compareHist(hist, hist2, cv2.HISTCMP_CHISQR)
+        distance = abs(distance)
+
+        if distance < smallestDistance:
+            smallestDistance = distance
+            smallestindex = i
+
+        i += interval
+
+    print("Least distance - forehead: ", smallestDistance)
+    print("At index - forehead: ", smallestindex)
+
+    calc = value_per_pixel * smallestindex
+    temp = max - calc
+    print("Temp - forehead: ", temp)
+    # preferably the temperature we do it as a range rather than one number since it is based on 10 rows = 10
+    # temperature variations
+
 
 # loop over the frames
 while True:
@@ -444,20 +498,7 @@ while True:
                     thickness = 2
 
                     cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    #cv2.polylines(thermal, [pts], isClosed, color, thickness)
-
-                    # finding the warmest part of the whole face
-                    #grayImage = cv2.cvtColor(thermal, cv2.COLOR_BGR2GRAY)
-                    #cropped = grayImage[rect.top(): rect.bottom(), rect.left(): rect.right()]
-
-                    # applying gaussian blur to take an area and not the highest pixel onlyh
-                    # croppedgaussian = cv2.GaussianBlur(cropped, (21,21), 0)
-
-                    #(minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(cropped)
-                    #cv2.circle(cropped, maxLoc, 10, 0, 2)
-                    #cv2.imshow("Max Value in the gray face", cropped)
-
-                    inner_canthus_coords_thermal(thermal, shape)
+                    # cv2.polylines(thermal, [pts], isClosed, color, thickness)
 
                     # Mask detection
 
@@ -479,9 +520,11 @@ while True:
                                         1.2,
                                         (0, 255, 0), 2)
 
+    inner_canthus_coords_thermal(thermal, shape)
+
     # show the output image
-    # cv2.imshow("Optical Image", frame)
-    # cv2.imshow("Thermal Image", thermal)
+    cv2.imshow("Optical Image", frame)
+    cv2.imshow("Thermal Image", thermal)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
@@ -491,4 +534,3 @@ while True:
         # do a bit of cleanup
         cv2.destroyAllWindows()
         vs.stop()
-
