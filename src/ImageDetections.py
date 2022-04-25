@@ -1,7 +1,4 @@
 # import the necessary packages
-import sys
-
-from matplotlib import pyplot as plt
 from pytesseract import pytesseract
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
@@ -224,19 +221,19 @@ def inner_canthus_coords_thermal(thermal, shape):
     toprightbar = (1277, 97)
     bottomrightbar = (1277, 616)
 
-    topleft_forehead = (400, 100)
-    bottomleft_forehead = (400, 164)
-    topright_forehead = (767, 100)
-    bottomright_forehead = (767, 164)
+    topleft_forehead = (349, 123)
+    bottomleft_forehead = (340, 170)
+    topright_forehead = (843, 123)
+    bottomright_forehead = (843, 170)
 
     # another spot higher than  the inner canthus has been found -> on the side of the forehead.
     innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
-    gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
+    # gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
 
     forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1], bottomleft_forehead[0]:bottomright_forehead[0]]
 
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
-    gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
+    # gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
     maxTemp, minTemp = extractTempFromImage(thermal)
     temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
@@ -281,18 +278,17 @@ def extractTempFromImage(thermal):
 
 def temperature_innercanthus(innercanthus, bar, maxTemp, minTemp):
     # OCR
-    max = pytesseract.image_to_string(maxTemp, config='--psm 6')
-    min = pytesseract.image_to_string(minTemp, config='--psm 6')
+    max = float(pytesseract.image_to_string(maxTemp, config='--psm 6'))
+    min = float(pytesseract.image_to_string(minTemp, config='--psm 6'))
 
-    max = float(max)
-    min = float(min)
+    cv2.imshow("inner canthus", innercanthus)
 
     difference = max - min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
 
     # Inner Canthus Histogram
     hist = cv2.calcHist([innercanthus], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-    hist = cv2.normalize(hist, hist).flatten()
+    hist = cv2.normalize(hist, hist).flatten() # normalize = changes the pixel intensity and increases the overall contrast
 
     r = bar.shape[0]
     interval = 10
@@ -328,11 +324,10 @@ def temperature_innercanthus(innercanthus, bar, maxTemp, minTemp):
 
 def temperature_forehead(forehead_thermal, bar, maxTemp, minTemp):
     # OCR
-    max = pytesseract.image_to_string(maxTemp, config='--psm 6')
-    min = pytesseract.image_to_string(minTemp, config='--psm 6')
-
-    max = float(max)
-    min = float(min)
+    cv2.imshow("forehead",forehead_thermal)
+    cv2.imshow("bar", bar)
+    max = float(pytesseract.image_to_string(maxTemp, config='--psm 6'))
+    min = float(pytesseract.image_to_string(minTemp, config='--psm 6'))
 
     difference = max - min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
@@ -428,14 +423,14 @@ while True:
 
         # setting the threshold to 16 for distance
         if rounded < 16:
-            cv2.putText(frame, "Too close to camera", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                        (0, 255, 0), 2)
+            cv2.putText(frame, "Too close to camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                         0, 2)
         elif rounded > 16:
-            cv2.putText(frame, "Too far from camera", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                        (0, 255, 0), 2)
+            cv2.putText(frame, "Too far from camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                         0, 2)
         else:
-            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (2100, 100), cv2.FONT_HERSHEY_SIMPLEX,
-                        1.2, (0, 255, 0), 2)
+            cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.2, 0, 2)
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
@@ -459,14 +454,14 @@ while True:
                 bright_pixel = np.sum(bright_part > 0)
 
                 if dark_pixel / total_pixel > bright_thres:
-                    cv2.putText(frame, "Face is underexposed", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                (0, 255, 0), 2)
+                    cv2.putText(frame, "Face is underexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                0, 2)
                 elif bright_pixel / total_pixel > dark_thres:
-                    cv2.putText(frame, "Face is overexposed", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                (0, 255, 0), 2)
+                    cv2.putText(frame, "Face is overexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                0, 2)
                 else:
-                    cv2.putText(frame, "Good Lighting", (2100, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                (0, 255, 0), 2)
+                    cv2.putText(frame, "Good Lighting", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                                0, 2)
 
                 LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape)
                 aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
@@ -475,13 +470,13 @@ while True:
                 judge = eyeglass(aligned_face)
                 if judge:
                     # if glasses are detected then the inner canthus will not be detected and not even the mask.
-                    cv2.putText(frame, "Please remove Glasses", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                    cv2.putText(frame, "Please remove Glasses", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
-                                (0, 255, 0), 2)
+                                0, 2)
                 else:
-                    cv2.putText(frame, "No Glasses detected", (2100, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                    cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
-                                (0, 255, 0), 2)
+                                0, 2)
 
                     # (x_face + 100, y_face - 10)
                     # (x_face + 100, y_face - 10)
@@ -512,13 +507,13 @@ while True:
                         # determine the class label and color we'll use to draw
                         # the bounding box and text
                         if mask > withoutMask:
-                            cv2.putText(frame, "Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                            cv2.putText(frame, "Mask Detected", (1200, 240), cv2.FONT_HERSHEY_SIMPLEX,
                                         1.2,
-                                        (0, 255, 0), 2)
+                                        0, 2)
                         else:
-                            cv2.putText(frame, "No Mask Detected", (2100, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                            cv2.putText(frame, "No Mask Detected", (1200, 240), cv2.FONT_HERSHEY_SIMPLEX,
                                         1.2,
-                                        (0, 255, 0), 2)
+                                        0, 2)
 
     inner_canthus_coords_thermal(thermal, shape)
 
