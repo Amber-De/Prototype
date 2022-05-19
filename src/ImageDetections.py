@@ -138,12 +138,12 @@ def getaligned_face(image, left, right):
     desired_h = 256
     desired_dist = desired_w * 0.5
 
-    eyesCenter = ((left[0] + right[0]) * 0.5, (left[1] + right[1]) * 0.5)
+    eyesCenter = ((left[0] + right[0]) * 0.5, (left[1] + right[1]) * 0.5)  # between eyebrows
     dx = right[0] - left[0]
     dy = right[1] - left[1]
-    distance = np.sqrt(dx * dx + dy * dy)
-    scale = desired_dist / distance
-    angle = np.degrees(np.arctan2(dy, dx))
+    distance = np.sqrt(dx * dx + dy * dy)  # interpupillary distance
+    scale = desired_dist / distance  # scaling ratio
+    angle = np.degrees(np.arctan2(dy, dx))  # rotation angle
     M = cv2.getRotationMatrix2D(eyesCenter, angle, scale)
 
     # update the translation component of the matrix
@@ -165,6 +165,7 @@ def eyeglass(image):
 
     edgeness = sobelY
 
+    # ret val is the thresh that was used; thresh is the thresholded image
     retVal, thresh = cv2.threshold(edgeness, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     d = len(thresh) * 0.5
@@ -188,7 +189,7 @@ def eyeglass(image):
     measure2 = sum(sum(roi_2 / 255)) / (np.shape(roi_2)[0] * np.shape(roi_2)[1])
     measure = measure1 * 0.3 + measure2 * 0.7
 
-    if measure > 0.15:
+    if measure > 0.18:
         judge = True
     else:
         judge = False
@@ -206,11 +207,11 @@ def perspective_transformation(optical):
 
     M = cv2.getPerspectiveTransform(pts1, pts2)
     dst = cv2.warpPerspective(optical, M, (cols, rows))
-
+    cv2.imshow("perspective transformation", dst)
     return dst
 
 
-def inner_canthus_coords_thermal(thermal, shape):
+def coords_thermal(thermal, shape):
     topleft = shape[21]
     bottomleft = shape[39]
     topright = shape[22]
@@ -228,14 +229,16 @@ def inner_canthus_coords_thermal(thermal, shape):
 
     # another spot higher than  the inner canthus has been found -> on the side of the forehead.
     innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
-    # gray_innercanthus = cv2.cvtColor(innercanthus, cv2.COLOR_BGR2GRAY)
 
-    forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1], bottomleft_forehead[0]:bottomright_forehead[0]]
+    forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1],
+                       bottomleft_forehead[0]:bottomright_forehead[0]]
+
+    cv2.imshow("forehead",forehead_thermal)
 
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     # gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
 
-    maxTemp, minTemp = extractTempFromImage(thermal)
+    maxTemp, minTemp = tempFromImage(thermal)
     temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
     temperature_forehead(forehead_thermal, bar, maxTemp, minTemp)
 
@@ -260,11 +263,11 @@ def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinVal
 
 
 # Performing OCR
-def extractTempFromImage(thermal):
+def tempFromImage(thermal):
     topleft = (1025, 92)
     bottomleft = (1025, 151)
-    topright = (1146, 92)
-    bottomright = (1146, 151)
+    topright = (1149, 97)
+    bottomright = (1149, 142)
     maxTemp = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
 
     topleft1 = (1043, 572)
@@ -273,22 +276,29 @@ def extractTempFromImage(thermal):
     bottomright1 = (1148, 633)
     minTemp = thermal[topleft1[1]:bottomleft1[1], bottomleft1[0]:bottomright1[0]]
 
+    maxTemp = cv2.cvtColor(maxTemp, cv2.COLOR_BGR2GRAY)
+    minTemp = cv2.cvtColor(minTemp, cv2.COLOR_BGR2GRAY)
+    cv2.medianBlur(minTemp, 5)
+    cv2.medianBlur(maxTemp, 5)
+
     return maxTemp, minTemp
 
 
 def temperature_innercanthus(innercanthus, bar, maxTemp, minTemp):
     # OCR
-    max = float(pytesseract.image_to_string(maxTemp, config='--psm 6'))
-    min = float(pytesseract.image_to_string(minTemp, config='--psm 6'))
+    max = float(pytesseract.image_to_string(maxTemp, config='--psm 8'))
+    min = float(pytesseract.image_to_string(minTemp, config='--psm 8'))
 
-    cv2.imshow("inner canthus", innercanthus)
+    print("min", min)
+    print("max", max)
 
     difference = max - min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
 
     # Inner Canthus Histogram
     hist = cv2.calcHist([innercanthus], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-    hist = cv2.normalize(hist, hist).flatten() # normalize = changes the pixel intensity and increases the overall contrast
+    hist = cv2.normalize(hist,
+                         hist).flatten()  # normalize = changes the pixel intensity and increases the overall contrast
 
     r = bar.shape[0]
     interval = 10
@@ -324,10 +334,12 @@ def temperature_innercanthus(innercanthus, bar, maxTemp, minTemp):
 
 def temperature_forehead(forehead_thermal, bar, maxTemp, minTemp):
     # OCR
-    cv2.imshow("forehead",forehead_thermal)
-    cv2.imshow("bar", bar)
-    max = float(pytesseract.image_to_string(maxTemp, config='--psm 6'))
-    min = float(pytesseract.image_to_string(minTemp, config='--psm 6'))
+
+    max = float(pytesseract.image_to_string(maxTemp, config='--psm 8'))
+    min = float(pytesseract.image_to_string(minTemp, config='--psm 8'))
+
+    print("min", min)
+    print("max", max)
 
     difference = max - min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
@@ -377,12 +389,12 @@ while True:
 
     # newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
     # frame = np.hstack((image, newimage))
+
     frame = perspective_transformation(frame)
-
-    # frame = cv2.resize(frame, (720,1280), interpolation=cv2.INTER_AREA)
-
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
+    #cv2.imshow("frame", frame)
+    #cv2.imshow("gray", gray)
+    #cv2.imshow("thermal", thermal)
     # detect faces in the grayscale frame
     rects = detector(gray, 0)
 
@@ -420,20 +432,22 @@ while True:
         frameWidth = w
         total = (faceWidth / frameWidth) * 100
         rounded = round(total)
+        print("rounded - ", rounded)
 
         # setting the threshold to 16 for distance
         if rounded < 16:
-            cv2.putText(frame, "Too close to camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                         0, 2)
-        elif rounded > 16:
             cv2.putText(frame, "Too far from camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                         0, 2)
+                        0, 2)
+        elif rounded > 25:
+            cv2.putText(frame, "Too close to camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                        0, 2)
         else:
             cv2.putText(frame, "Ideal Distance reached: " + str(rounded) + "%", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX,
                         1.2, 0, 2)
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
+        print(text)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
@@ -477,45 +491,48 @@ while True:
                     cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
                                 1.2,
                                 0, 2)
-
                     # (x_face + 100, y_face - 10)
                     # (x_face + 100, y_face - 10)
 
-                    # Inner Canthus localisation
+                # Inner Canthus localisation
+                # loop over the (x, y)-coordinates for the facial landmarks
+                # and draw them on the image
+                pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
+                pts = pts.reshape((-1, 1, 2))
+                isClosed = True  # if the polygon is a closed shape
 
-                    # loop over the (x, y)-coordinates for the facial landmarks
-                    # and draw them on the image
-                    pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
-                    pts = pts.reshape((-1, 1, 2))
-                    isClosed = True  # if the polygon is a closed shape
+                color = (0, 0, 255)
+                thickness = 2
 
-                    color = (0, 0, 255)
-                    thickness = 2
+                cv2.polylines(frame, [pts], isClosed, color, thickness)
+                # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/OpticalImage.png", frame)
+                cv2.polylines(thermal, [pts], isClosed, color, thickness)
+                # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/ThermalImage.png", thermal)
 
-                    cv2.polylines(frame, [pts], isClosed, color, thickness)
-                    # cv2.polylines(thermal, [pts], isClosed, color, thickness)
+                # Mask detection
 
-                    # Mask detection
+                # loop over the detected face locations and their corresponding
+                # locations
+                for (box, pred) in zip(locs, preds):
+                    # unpack the bounding box and predictions
+                    (startX, startY, endX, endY) = box
+                    (mask, withoutMask) = pred
 
-                    # loop over the detected face locations and their corresponding
-                    # locations
-                    for (box, pred) in zip(locs, preds):
-                        # unpack the bounding box and predictions
-                        (startX, startY, endX, endY) = box
-                        (mask, withoutMask) = pred
+                    # determine the class label and color we'll use to draw
+                    # the bounding box and text
+                    label = "Mask  Detected" if mask > withoutMask else "No Mask Detected"
+                    color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+                    # include the probability in the label
+                    # display the label and bounding box rectangle on the output
+                    # frame
+                    cv2.putText(frame, label, (1200, 240),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
+                    print(max(mask, withoutMask) * 100)
 
-                        # determine the class label and color we'll use to draw
-                        # the bounding box and text
-                        if mask > withoutMask:
-                            cv2.putText(frame, "Mask Detected", (1200, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        1.2,
-                                        0, 2)
-                        else:
-                            cv2.putText(frame, "No Mask Detected", (1200, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        1.2,
-                                        0, 2)
-
-    inner_canthus_coords_thermal(thermal, shape)
+    if rects:
+        coords_thermal(thermal, shape)
+    else:
+        print("No detected faces")
 
     # show the output image
     cv2.imshow("Optical Image", frame)
