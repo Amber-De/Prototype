@@ -21,8 +21,8 @@ ap.add_argument("-f", "--face", type=str,
 ap.add_argument("-m", "--model", type=str,
                 default="/Users/amberdebono/PycharmProjects/Prototype/src/mask_detector.model",
                 help="path to trained face mask detector model")
-ap.add_argument("-p", "--shape-predictor", required=True,
-                help="path to facial landmark predictor")
+ap.add_argument("-p81", "--shape-predictor81",
+                default="/Users/amberdebono/PycharmProjects/Prototype/src/shape_predictor_81_face_landmarks.dat")
 # It is noted that with 0.5 confidence level the glasses and inner canthus are not detected, whilst with 0.3 they are
 # detected
 ap.add_argument("-c", "--confidence", type=float, default=0.3,
@@ -33,7 +33,7 @@ args = vars(ap.parse_args())
 # the facial landmark predictor
 print("[INFO] loading facial landmark predictor...")
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(args["shape_predictor"])
+predictor81 = dlib.shape_predictor(args["shape_predictor81"])
 
 # load our serialized face detector model from disk
 print("[INFO] loading face detector model...")
@@ -110,13 +110,14 @@ def detect_and_predict_mask(frame, net, model):
 
 
 def get_centers(img, landmarks):
+
     EYE_LEFT_OUTER = landmarks[36]
     EYE_LEFT_INNER = landmarks[39]
-    EYE_RIGHT_OUTER = landmarks[42]
-    EYE_RIGHT_INNER = landmarks[45]
+    EYE_RIGHT_OUTER = landmarks[45]
+    EYE_RIGHT_INNER = landmarks[42]
 
-    x = (landmarks[36:40]).T[0]
-    y = (landmarks[42:46]).T[1]
+    x = (landmarks[36:46]).T[0]
+    y = (landmarks[36:46]).T[1]
     A = np.vstack([x, np.ones(len(x))]).T
     k, b = np.linalg.lstsq(A, y, rcond=None)[0]
 
@@ -126,7 +127,7 @@ def get_centers(img, landmarks):
     RIGHT_EYE_CENTER = np.array([np.int32(x_right), np.int32(x_right * k + b)])
 
     pts = np.vstack((LEFT_EYE_CENTER, RIGHT_EYE_CENTER))
-    cv2.polylines(img, [pts], False, (255, 0, 0), 1)  # 画回归线
+    cv2.polylines(img, [pts], False, (255, 0, 0), 1)
     cv2.circle(img, (LEFT_EYE_CENTER[0], LEFT_EYE_CENTER[1]), 3, (0, 0, 255), -1)
     cv2.circle(img, (RIGHT_EYE_CENTER[0], RIGHT_EYE_CENTER[1]), 3, (0, 0, 255), -1)
 
@@ -210,8 +211,9 @@ def perspective_transformation(optical):
     return dst
 
 
-def extracting_innercanthus(frame2, thermal):
+def extracting_innercanthus(frame2):
     frame2 = perspective_transformation(frame2)
+
     gray = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
 
     rects = detector(gray, 0)
@@ -223,20 +225,15 @@ def extracting_innercanthus(frame2, thermal):
     detections = net.forward()
 
     for i in range(0, detections.shape[2]):
-        # compute the (x,y)-co-ordinates of the bounding box for the object
-        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
 
         for rect in rects:
             x_face = rect.left()
             y_face = rect.top()
-            w_face = rect.right() - x_face
-            h_face = rect.bottom() - y_face
 
-            shape2 = predictor(gray, rect)
+            shape2 = predictor81(gray, rect)
             shape2 = face_utils.shape_to_np(shape2)
 
             for (x, y) in shape2:
-
                 # Inner Canthus localisation
                 pts = np.array([[shape2[21]], [shape2[39]], [shape2[42]], [shape2[22]]], np.int32)
                 pts = pts.reshape((-1, 1, 2))
@@ -246,42 +243,66 @@ def extracting_innercanthus(frame2, thermal):
                 thickness = 2
 
                 cv2.polylines(frame2, [pts], isClosed, color, thickness)
-                #cv2.polylines(thermal, [pts], isClosed, color, thickness)
 
-                cv2.imshow("frame2", frame2)
-                #cv2.imshow("thermal", thermal)
-
-                return frame2, thermal, shape2
+                return frame2
 
 
-def coords_thermal(thermal, shape):
+def extracting_forehead(frame2):
+    dets = detector(frame2, 0)
+    for k, d in enumerate(dets):
+        shape = predictor81(frame2, d)
 
-    topleft = shape[21]
-    bottomleft = shape[39]
-    topright = shape[22]
-    bottomright = shape[42]
+        topleft = [shape.parts()[70].x, shape.parts()[70].y]
+        bottomleft = [shape.parts()[19].x, shape.parts()[19].y]
+        bottomright = [shape.parts()[24].x, shape.parts()[24].y]
+        topright = [shape.parts()[80].x, shape.parts()[80].y]
 
-    topleftbar = (1233, 97)
-    bottomleftbar = (1233, 616)
-    toprightbar = (1277, 97)
-    bottomrightbar = (1277, 616)
+        pts = np.array([[topleft], [bottomleft], [bottomright], [topright]], np.int32)
+        pts = pts.reshape((-1, 1, 2))
+        isClosed = True  # if the polygon is a closed shape
 
-    topleft_forehead = (471, 213)
-    bottomleft_forehead = (471, 263)
-    topright_forehead = (816, 213)
-    bottomright_forehead = (816, 263)
+        color = (0, 0, 255)
+        thickness = 2
 
-    # another spot higher than  the inner canthus has been found -> on the side of the forehead.
+        cv2.polylines(frame2, [pts], isClosed, color, thickness)
+
+        for num in range(shape.num_parts):
+            cv2.circle(frame2, (shape.parts()[num].x, shape.parts()[num].y), 3, (0, 255, 0), -1)
+
+    cv2.imshow("frame2", frame2)
+    return frame2
+
+
+def coords_thermal(thermal, frame2):
+    dets = detector(frame2, 0)
+    for k, d in enumerate(dets):
+        shape = predictor81(frame2, d)
+
+        topleft = [shape.parts()[21].x, shape.parts()[21].y]
+        bottomleft = [shape.parts()[39].x, shape.parts()[39].y]
+        topright = [shape.parts()[22].x, shape.parts()[22].y]
+        bottomright = [shape.parts()[42].x, shape.parts()[42].y]
+
+        topleftbar = (1233, 97)
+        bottomleftbar = (1233, 616)
+        toprightbar = (1277, 97)
+        bottomrightbar = (1277, 616)
+
+        topleft_forehead = [shape.parts()[70].x, shape.parts()[70].y]
+        bottomleft_forehead = [shape.parts()[19].x, shape.parts()[19].y]
+        topright_forehead = [shape.parts()[80].x, shape.parts()[80].y]
+        bottomright_forehead = [shape.parts()[24].x, shape.parts()[24].y]
+
     innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
 
     forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1],
                        bottomleft_forehead[0]:bottomright_forehead[0]]
 
+    bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
+
     cv2.imshow("innercanthus", innercanthus)
     cv2.imshow("forehead", forehead_thermal)
-
-    bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
-    # gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
+    cv2.imshow("bar", bar)
 
     maxTemp, minTemp = tempFromImage(thermal)
     temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
@@ -487,7 +508,7 @@ while True:
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
-        #print(text)
+        # print(text)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
@@ -498,10 +519,9 @@ while True:
             w_face = rect.right() - x_face
             h_face = rect.bottom() - y_face
 
-            shape = predictor(gray, rect)
-            shape = face_utils.shape_to_np(shape)
-
-            for (x, y) in shape:
+            shape = predictor81(gray, rect)
+            shape2 = face_utils.shape_to_np(shape)
+            for (x, y) in shape2:
                 # Light Exposure
                 total_pixel = np.size(gray)
                 dark_pixel = np.sum(dark_part > 0)
@@ -517,7 +537,7 @@ while True:
                     cv2.putText(frame, "Good Lighting", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                                 0, 2)
 
-                LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape)
+                LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape2)
                 aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
 
                 # Glasses Prediction
@@ -551,19 +571,18 @@ while True:
                     # frame
                     cv2.putText(frame, label, (1200, 240),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
-                    #print(max(mask, withoutMask) * 100)
-
-                frame2image, thermalimage, shape2 = extracting_innercanthus(frame2, thermal)
+                    # print(max(mask, withoutMask) * 100)
 
     if rects:
-        coords_thermal(thermalimage, shape2)
+        frame2 = extracting_innercanthus(frame2)
+        frame2 = extracting_forehead(frame2)
+        coords_thermal(thermal, frame2)
     else:
         print("No detected faces")
 
     # show the output image
     cv2.imshow("Optical Image", frame)
-    #cv2.imshow("Optical Image2", frame2image)
-    cv2.imshow("Thermal Image", thermalimage)
+    cv2.imshow("Thermal Image", thermal)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
