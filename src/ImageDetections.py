@@ -207,11 +207,55 @@ def perspective_transformation(optical):
 
     M = cv2.getPerspectiveTransform(pts1, pts2)
     dst = cv2.warpPerspective(optical, M, (cols, rows))
-    cv2.imshow("perspective transformation", dst)
     return dst
 
 
+def extracting_innercanthus(frame2, thermal):
+    frame2 = perspective_transformation(frame2)
+    gray = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+
+    rects = detector(gray, 0)
+    # creating a blob
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame2, (300, 300)), 1.0,
+                                 (300, 300), (104.0, 177.0, 123.0))
+
+    net.setInput(blob)
+    detections = net.forward()
+
+    for i in range(0, detections.shape[2]):
+        # compute the (x,y)-co-ordinates of the bounding box for the object
+        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+
+        for rect in rects:
+            x_face = rect.left()
+            y_face = rect.top()
+            w_face = rect.right() - x_face
+            h_face = rect.bottom() - y_face
+
+            shape2 = predictor(gray, rect)
+            shape2 = face_utils.shape_to_np(shape2)
+
+            for (x, y) in shape2:
+
+                # Inner Canthus localisation
+                pts = np.array([[shape2[21]], [shape2[39]], [shape2[42]], [shape2[22]]], np.int32)
+                pts = pts.reshape((-1, 1, 2))
+                isClosed = True  # if the polygon is a closed shape
+
+                color = (0, 0, 255)
+                thickness = 2
+
+                cv2.polylines(frame2, [pts], isClosed, color, thickness)
+                #cv2.polylines(thermal, [pts], isClosed, color, thickness)
+
+                cv2.imshow("frame2", frame2)
+                #cv2.imshow("thermal", thermal)
+
+                return frame2, thermal, shape2
+
+
 def coords_thermal(thermal, shape):
+
     topleft = shape[21]
     bottomleft = shape[39]
     topright = shape[22]
@@ -222,10 +266,10 @@ def coords_thermal(thermal, shape):
     toprightbar = (1277, 97)
     bottomrightbar = (1277, 616)
 
-    topleft_forehead = (349, 123)
-    bottomleft_forehead = (340, 170)
-    topright_forehead = (843, 123)
-    bottomright_forehead = (843, 170)
+    topleft_forehead = (471, 213)
+    bottomleft_forehead = (471, 263)
+    topright_forehead = (816, 213)
+    bottomright_forehead = (816, 263)
 
     # another spot higher than  the inner canthus has been found -> on the side of the forehead.
     innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
@@ -233,7 +277,8 @@ def coords_thermal(thermal, shape):
     forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1],
                        bottomleft_forehead[0]:bottomright_forehead[0]]
 
-    cv2.imshow("forehead",forehead_thermal)
+    cv2.imshow("innercanthus", innercanthus)
+    cv2.imshow("forehead", forehead_thermal)
 
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
     # gray_bar = cv2.cvtColor(bar, cv2.COLOR_BGR2GRAY)
@@ -385,16 +430,10 @@ while True:
     # reading the frames
     # image = cv2.imread(args["image"])
     frame = cv2.imread(args["opticalImage"])
+    frame2 = cv2.imread(args["opticalImage"])
     thermal = cv2.imread(args["thermalImage"])
-
-    # newimage = cv2.resize(image1, (2688, 1520), interpolation=cv2.INTER_AREA)
-    # frame = np.hstack((image, newimage))
-
-    frame = perspective_transformation(frame)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    #cv2.imshow("frame", frame)
-    #cv2.imshow("gray", gray)
-    #cv2.imshow("thermal", thermal)
+
     # detect faces in the grayscale frame
     rects = detector(gray, 0)
 
@@ -403,6 +442,7 @@ while True:
 
     # grab the frame dimensions and convert it to a blob
     (h, w) = frame.shape[:2]
+
     # creating a blob
     blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
                                  (300, 300), (104.0, 177.0, 123.0))
@@ -438,7 +478,7 @@ while True:
         if rounded < 16:
             cv2.putText(frame, "Too far from camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         0, 2)
-        elif rounded > 25:
+        elif rounded > 27:
             cv2.putText(frame, "Too close to camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         0, 2)
         else:
@@ -447,7 +487,7 @@ while True:
 
         # drawing the bounding face of the face including the probability
         text = "{:.1f}%".format(confidence * 100)
-        print(text)
+        #print(text)
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
@@ -493,23 +533,7 @@ while True:
                                 0, 2)
                     # (x_face + 100, y_face - 10)
                     # (x_face + 100, y_face - 10)
-
-                # Inner Canthus localisation
-                # loop over the (x, y)-coordinates for the facial landmarks
-                # and draw them on the image
-                pts = np.array([[shape[21]], [shape[39]], [shape[42]], [shape[22]]], np.int32)
-                pts = pts.reshape((-1, 1, 2))
-                isClosed = True  # if the polygon is a closed shape
-
-                color = (0, 0, 255)
-                thickness = 2
-
-                cv2.polylines(frame, [pts], isClosed, color, thickness)
-                # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/OpticalImage.png", frame)
-                cv2.polylines(thermal, [pts], isClosed, color, thickness)
-                # cv2.imwrite("/Users/amberdebono/PycharmProjects/Prototype/ThermalImage.png", thermal)
-
-                # Mask detection
+                    # Mask detection
 
                 # loop over the detected face locations and their corresponding
                 # locations
@@ -527,22 +551,21 @@ while True:
                     # frame
                     cv2.putText(frame, label, (1200, 240),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
-                    print(max(mask, withoutMask) * 100)
+                    #print(max(mask, withoutMask) * 100)
+
+                frame2image, thermalimage, shape2 = extracting_innercanthus(frame2, thermal)
 
     if rects:
-        coords_thermal(thermal, shape)
+        coords_thermal(thermalimage, shape2)
     else:
         print("No detected faces")
 
     # show the output image
     cv2.imshow("Optical Image", frame)
-    cv2.imshow("Thermal Image", thermal)
+    #cv2.imshow("Optical Image2", frame2image)
+    cv2.imshow("Thermal Image", thermalimage)
     key = cv2.waitKey(0)
 
     # if the `q` key was pressed, break from the loop
     if key == ord("q"):
         break
-
-        # do a bit of cleanup
-        cv2.destroyAllWindows()
-        vs.stop()
