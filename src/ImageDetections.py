@@ -1,4 +1,5 @@
 # import the necessary packages
+from matplotlib import pyplot as plt
 from pytesseract import pytesseract
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
@@ -160,6 +161,7 @@ def getaligned_face(image, left, right):
 
 def eyeglass(image):
     image = cv2.GaussianBlur(image, (11, 11), 0)
+    cv2.imshow("eyeglass image", image)
 
     sobelY = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=-1)
     sobelY = cv2.convertScaleAbs(sobelY)
@@ -190,7 +192,9 @@ def eyeglass(image):
     measure2 = sum(sum(roi_2 / 255)) / (np.shape(roi_2)[0] * np.shape(roi_2)[1])
     measure = measure1 * 0.3 + measure2 * 0.7
 
-    if measure > 0.18:
+    print("measure: ", measure)
+
+    if measure > 0.235:
         judge = True
     else:
         judge = False
@@ -302,7 +306,6 @@ def coords_thermal(thermal, frame2):
 
     cv2.imshow("innercanthus", innercanthus)
     cv2.imshow("forehead", forehead_thermal)
-    cv2.imshow("bar", bar)
 
     maxTemp, minTemp = tempFromImage(thermal)
     temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
@@ -328,7 +331,6 @@ def calculatingTemperature(gray_bar, gray_innercanthus, grayMaxValue, grayMinVal
     # temperature = max - pixel_per_row
 
 
-# Performing OCR
 def tempFromImage(thermal):
     topleft = (1025, 92)
     bottomleft = (1025, 151)
