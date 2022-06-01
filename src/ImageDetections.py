@@ -498,7 +498,7 @@ while True:
         print("rounded - ", rounded)
 
         # setting the threshold to 16 for distance
-        if rounded < 16:
+        if rounded < 17:
             cv2.putText(frame, "Too far from camera", (1200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
                         0, 2)
         elif rounded > 27:
