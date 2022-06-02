@@ -48,8 +48,8 @@ print("[INFO] loading face mask detector model...")
 model = load_model(args["model"])
 
 # Declaring the least bright/dark it can be
-bright_thres = 0.5
-dark_thres = 0.4
+bright_thres = 0.2
+dark_thres = 0.03
 
 
 def detect_and_predict_mask(frame, net, model):
@@ -161,7 +161,6 @@ def getaligned_face(image, left, right):
 
 def eyeglass(image):
     image = cv2.GaussianBlur(image, (11, 11), 0)
-    cv2.imshow("eyeglass image", image)
 
     sobelY = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=-1)
     sobelY = cv2.convertScaleAbs(sobelY)
@@ -191,8 +190,6 @@ def eyeglass(image):
     measure1 = sum(sum(roi_1 / 255)) / (np.shape(roi_1)[0] * np.shape(roi_1)[1])
     measure2 = sum(sum(roi_2 / 255)) / (np.shape(roi_2)[0] * np.shape(roi_2)[1])
     measure = measure1 * 0.3 + measure2 * 0.7
-
-    print("measure: ", measure)
 
     if measure > 0.235:
         judge = True
@@ -252,6 +249,7 @@ def extracting_innercanthus(frame2):
 
 
 def extracting_forehead(frame2):
+
     dets = detector(frame2, 0)
     for k, d in enumerate(dets):
         shape = predictor81(frame2, d)
@@ -305,7 +303,7 @@ def coords_thermal(thermal, frame2):
     bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
 
     cv2.imshow("innercanthus", innercanthus)
-    cv2.imshow("forehead", forehead_thermal)
+    #cv2.imshow("forehead", forehead_thermal)
 
     maxTemp, minTemp = tempFromImage(thermal)
     temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
@@ -409,7 +407,7 @@ def temperature_forehead(forehead_thermal, bar, maxTemp, minTemp):
     print("min", min)
     print("max", max)
 
-    difference = max - min
+    difference = max -min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
 
     # Forehead Histogram
@@ -455,12 +453,10 @@ while True:
     frame = cv2.imread(args["opticalImage"])
     frame2 = cv2.imread(args["opticalImage"])
     thermal = cv2.imread(args["thermalImage"])
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # detect faces in the grayscale frame
-    rects = detector(gray, 0)
-
-    dark_part = cv2.inRange(gray, 0, 30)
+    dark_part = cv2.inRange(gray, 0, 50)
     bright_part = cv2.inRange(gray, 220, 255)
 
     # grab the frame dimensions and convert it to a blob
@@ -476,7 +472,8 @@ while True:
     detections = net.forward()
 
     # Perspective Transformation is done so that the Optical Image and Thermal Image are aligned
-
+    # detect faces in the grayscale frame
+    rects = detector(gray, 0)
     (locs, preds) = detect_and_predict_mask(frame, net, model)
 
     for i in range(0, detections.shape[2]):
@@ -547,39 +544,38 @@ while True:
                 if judge:
                     # if glasses are detected then the inner canthus will not be detected and not even the mask.
                     cv2.putText(frame, "Please remove Glasses", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
-                                1.2,
-                                0, 2)
+                                1.2, (0,255,0), 2)
                 else:
-                    cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
-                                1.2,
-                                0, 2)
+                   cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                                1.2, 0, 2)
                     # (x_face + 100, y_face - 10)
                     # (x_face + 100, y_face - 10)
                     # Mask detection
 
-                # loop over the detected face locations and their corresponding
-                # locations
+                    # loop over the detected face locations and their corresponding
+                    # locations
                 for (box, pred) in zip(locs, preds):
-                    # unpack the bounding box and predictions
-                    (startX, startY, endX, endY) = box
-                    (mask, withoutMask) = pred
+                        # unpack the bounding box and predictions
+                        (startX, startY, endX, endY) = box
+                        (mask, withoutMask) = pred
 
-                    # determine the class label and color we'll use to draw
-                    # the bounding box and text
-                    label = "Mask  Detected" if mask > withoutMask else "No Mask Detected"
-                    color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
-                    # include the probability in the label
-                    # display the label and bounding box rectangle on the output
-                    # frame
-                    cv2.putText(frame, label, (1200, 240),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
-                    # print(max(mask, withoutMask) * 100)
+                        # determine the class label and color we'll use to draw
+                        # the bounding box and text
+                        label = "Mask  Detected" if mask > withoutMask else "No Mask Detected"
+                        color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+                        # include the probability in the label
+                        # display the label and bounding box rectangle on the output
+                        # frame
+                        #cv2.putText(frame, label, (1200, 240),
+                        #           cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
+                        #print(max(mask, withoutMask) * 100)
 
     if rects:
         frame2 = extracting_innercanthus(frame2)
         frame2 = extracting_forehead(frame2)
         coords_thermal(thermal, frame2)
     else:
+        cv2.imshow("frame", frame)
         print("No detected faces")
 
     # show the output image
