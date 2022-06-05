@@ -52,7 +52,7 @@ bright_thres = 0.2
 dark_thres = 0.03
 
 
-def detect_and_predict_mask(frame, net, model):
+def detect_and_predict_mask(frame, model):
     # grab the dimensions of the frame and then construct a blob
     # from it
     (h, w) = frame.shape[:2]
@@ -64,6 +64,11 @@ def detect_and_predict_mask(frame, net, model):
     faces = []
     locs = []
     preds = []
+
+    # pass the blob through the network and obtain the face detections
+    print("[INFO] computing face detections...")
+    net.setInput(blob)
+    detections = net.forward()
 
     # loop over the detections
     for i in range(0, detections.shape[2]):
@@ -91,34 +96,37 @@ def detect_and_predict_mask(frame, net, model):
             face = cv2.resize(face, (224, 224))
             face = img_to_array(face)
             face = preprocess_input(face)
+            face = np.expand_dims(face, axis=0)
+
+            (mask, withoutMask) = model.predict(face)[0]
 
             # add the face and bounding boxes to their respective
             # lists
-            faces.append(face)
-            locs.append((startX, startY, endX, endY))
+            #faces.append(face)
+            #locs.append((startX, startY, endX, endY))
 
-    # only make a predictions if at least one face was detected
-    if len(faces) > 0:
-        # for faster inference we'll make batch predictions on *all*
-        # faces at the same time rather than one-by-one predictions
-        # in the above `for` loop
-        faces = np.array(faces, dtype="float32")
-        preds = model.predict(faces, batch_size=32)
-
-    # return a 2-tuple of the face locations and their corresponding
-    # locations
-    return (locs, preds)
+            # determine the class label and color we'll use to draw
+            # the bounding box and text
+            label = "Mask" if mask > withoutMask else "No Mask"
+            color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+            # include the probability in the label
+            label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
+            # display the label and bounding box rectangle on the output
+            # frame
+            cv2.putText(frame, label, (startX, startY - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
+    cv2.imshow("Mask", frame)
 
 
 def get_centers(img, landmarks):
-
     EYE_LEFT_OUTER = landmarks[36]
     EYE_LEFT_INNER = landmarks[39]
     EYE_RIGHT_OUTER = landmarks[45]
     EYE_RIGHT_INNER = landmarks[42]
 
-    x = (landmarks[36:46]).T[0]
-    y = (landmarks[36:46]).T[1]
+    x = (shape2[36:46]).T[0]
+    y = (shape2[36:46]).T[1]
     A = np.vstack([x, np.ones(len(x))]).T
     k, b = np.linalg.lstsq(A, y, rcond=None)[0]
 
@@ -217,7 +225,6 @@ def extracting_innercanthus(frame2):
 
     gray = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
 
-    rects = detector(gray, 0)
     # creating a blob
     blob = cv2.dnn.blobFromImage(cv2.resize(frame2, (300, 300)), 1.0,
                                  (300, 300), (104.0, 177.0, 123.0))
@@ -227,32 +234,43 @@ def extracting_innercanthus(frame2):
 
     for i in range(0, detections.shape[2]):
 
-        for rect in rects:
-            x_face = rect.left()
-            y_face = rect.top()
+        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+        # rect = detector(gray, 0)
+        (startX, startY, endX, endY) = box.astype("int")
+        rect = dlib.rectangle(startX, startY, endX, endY)
+        shape2 = predictor81(gray, rect)
+        shape2 = face_utils.shape_to_np(shape2)
 
-            shape2 = predictor81(gray, rect)
-            shape2 = face_utils.shape_to_np(shape2)
+        for (x, y) in shape2:
+            # Inner Canthus localisation
+            pts = np.array([[shape2[21]], [shape2[39]], [shape2[42]], [shape2[22]]], np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            isClosed = True  # if the polygon is a closed shape
 
-            for (x, y) in shape2:
-                # Inner Canthus localisation
-                pts = np.array([[shape2[21]], [shape2[39]], [shape2[42]], [shape2[22]]], np.int32)
-                pts = pts.reshape((-1, 1, 2))
-                isClosed = True  # if the polygon is a closed shape
+            color = (0, 0, 255)
+            thickness = 2
 
-                color = (0, 0, 255)
-                thickness = 2
+            cv2.polylines(frame2, [pts], isClosed, color, thickness)
 
-                cv2.polylines(frame2, [pts], isClosed, color, thickness)
-
-                return frame2
+            return frame2
 
 
 def extracting_forehead(frame2):
 
-    dets = detector(frame2, 0)
-    for k, d in enumerate(dets):
-        shape = predictor81(frame2, d)
+    # creating a blob
+    blob2 = cv2.dnn.blobFromImage(cv2.resize(frame2, (300, 300)), 1.0,
+                                 (300, 300), (104.0, 177.0, 123.0))
+    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    net.setInput(blob2)
+    detections2 = net.forward()
+
+    for i in range(0, detections2.shape[2]):
+
+        box = detections2[0, 0, i, 3:7] * np.array([w, h, w, h])
+        # rect = detector(gray, 0)
+        (startX, startY, endX, endY) = box.astype("int")
+        rect = dlib.rectangle(startX, startY, endX, endY)
+        shape = predictor81(gray2, rect)
 
         topleft = [shape.parts()[70].x, shape.parts()[70].y]
         bottomleft = [shape.parts()[19].x, shape.parts()[19].y]
@@ -268,17 +286,26 @@ def extracting_forehead(frame2):
 
         cv2.polylines(frame2, [pts], isClosed, color, thickness)
 
-        for num in range(shape.num_parts):
-            cv2.circle(frame2, (shape.parts()[num].x, shape.parts()[num].y), 3, (0, 255, 0), -1)
+        #for num in range(shape.num_parts):
+         #   cv2.circle(frame2, (shape.parts()[num].x, shape.parts()[num].y), 3, (0, 255, 0), -1)
 
-    cv2.imshow("frame2", frame2)
-    return frame2
+        return frame2
 
 
 def coords_thermal(thermal, frame2):
-    dets = detector(frame2, 0)
-    for k, d in enumerate(dets):
-        shape = predictor81(frame2, d)
+    # creating a blob
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame2, (300, 300)), 1.0,
+                                 (300, 300), (104.0, 177.0, 123.0))
+    gray = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    net.setInput(blob)
+    detections = net.forward()
+
+    for i in range(0, detections.shape[2]):
+        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+        # rect = detector(gray, 0)
+        (startX, startY, endX, endY) = box.astype("int")
+        rect = dlib.rectangle(startX, startY, endX, endY)
+        shape = predictor81(gray, rect)
 
         topleft = [shape.parts()[21].x, shape.parts()[21].y]
         bottomleft = [shape.parts()[39].x, shape.parts()[39].y]
@@ -295,19 +322,19 @@ def coords_thermal(thermal, frame2):
         topright_forehead = [shape.parts()[80].x, shape.parts()[80].y]
         bottomright_forehead = [shape.parts()[24].x, shape.parts()[24].y]
 
-    innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
+        innercanthus = thermal[topleft[1]:bottomleft[1], bottomleft[0]:bottomright[0]]
 
-    forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1],
-                       bottomleft_forehead[0]:bottomright_forehead[0]]
+        forehead_thermal = thermal[topleft_forehead[1]:bottomleft_forehead[1],
+                           bottomleft_forehead[0]:bottomright_forehead[0]]
 
-    bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
+        bar = thermal[topleftbar[1]:bottomleftbar[1], bottomleftbar[0]:bottomrightbar[0]]
 
-    cv2.imshow("innercanthus", innercanthus)
-    #cv2.imshow("forehead", forehead_thermal)
+        cv2.imshow("innercanthus", innercanthus)
+        cv2.imshow("forehead", forehead_thermal)
 
-    maxTemp, minTemp = tempFromImage(thermal)
-    temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
-    temperature_forehead(forehead_thermal, bar, maxTemp, minTemp)
+        maxTemp, minTemp = tempFromImage(thermal)
+        temperature_innercanthus(innercanthus, bar, maxTemp, minTemp)
+        return temperature_forehead(forehead_thermal, bar, maxTemp, minTemp)
 
 
 # Another method for calculating temperature
@@ -407,7 +434,7 @@ def temperature_forehead(forehead_thermal, bar, maxTemp, minTemp):
     print("min", min)
     print("max", max)
 
-    difference = max -min
+    difference = max - min
     value_per_pixel = difference / bar.shape[0]  # the no. of loops - rows  (temp of each row)
 
     # Forehead Histogram
@@ -473,8 +500,9 @@ while True:
 
     # Perspective Transformation is done so that the Optical Image and Thermal Image are aligned
     # detect faces in the grayscale frame
-    rects = detector(gray, 0)
-    (locs, preds) = detect_and_predict_mask(frame, net, model)
+    cv2.imshow("gray", gray)
+
+    detect_and_predict_mask(frame, model)
 
     for i in range(0, detections.shape[2]):
         # extracting the confidence/probability associated with the prediction
@@ -511,66 +539,43 @@ while True:
         y = startY - 10 if startY - 10 > 10 else startY + 10
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
-        for rect in rects:
+        rect = dlib.rectangle(startX, startY, endX, endY)
+        shape = predictor81(gray, rect)
+        shape2 = face_utils.shape_to_np(shape)
 
-            x_face = rect.left()
-            y_face = rect.top()
-            w_face = rect.right() - x_face
-            h_face = rect.bottom() - y_face
+        for (x, y) in shape2:
+            # Light Exposure
+            total_pixel = np.size(gray)
+            dark_pixel = np.sum(dark_part > 0)
+            bright_pixel = np.sum(bright_part > 0)
 
-            shape = predictor81(gray, rect)
-            shape2 = face_utils.shape_to_np(shape)
-            for (x, y) in shape2:
-                # Light Exposure
-                total_pixel = np.size(gray)
-                dark_pixel = np.sum(dark_part > 0)
-                bright_pixel = np.sum(bright_part > 0)
+            if dark_pixel / total_pixel > bright_thres:
+                cv2.putText(frame, "Face is underexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                            0, 2)
+            elif bright_pixel / total_pixel > dark_thres:
+                cv2.putText(frame, "Face is overexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                            0, 2)
+            else:
+                cv2.putText(frame, "Good Lighting", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                            0, 2)
 
-                if dark_pixel / total_pixel > bright_thres:
-                    cv2.putText(frame, "Face is underexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                0, 2)
-                elif bright_pixel / total_pixel > dark_thres:
-                    cv2.putText(frame, "Face is overexposed", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                0, 2)
-                else:
-                    cv2.putText(frame, "Good Lighting", (1200, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                                0, 2)
+        LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape2)
+        aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
 
-                LEFT_EYE_CENTER, RIGHT_EYE_CENTER = get_centers(frame, shape2)
-                aligned_face = getaligned_face(gray, LEFT_EYE_CENTER, RIGHT_EYE_CENTER)
+        # Glasses Prediction
+        judge = eyeglass(aligned_face)
+        if judge:
+            # if glasses are detected then the inner canthus will not be detected and not even the mask.
+            cv2.putText(frame, "Please remove Glasses", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.2, (0, 255, 0), 2)
+        else:
+            cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.2, 0, 2)
+            # (x_face + 100, y_face - 10)
+            # (x_face + 100, y_face - 10)
 
-                # Glasses Prediction
-                judge = eyeglass(aligned_face)
-                if judge:
-                    # if glasses are detected then the inner canthus will not be detected and not even the mask.
-                    cv2.putText(frame, "Please remove Glasses", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
-                                1.2, (0,255,0), 2)
-                else:
-                   cv2.putText(frame, "No Glasses detected", (1200, 190), cv2.FONT_HERSHEY_SIMPLEX,
-                                1.2, 0, 2)
-                    # (x_face + 100, y_face - 10)
-                    # (x_face + 100, y_face - 10)
-                    # Mask detection
 
-                    # loop over the detected face locations and their corresponding
-                    # locations
-                for (box, pred) in zip(locs, preds):
-                        # unpack the bounding box and predictions
-                        (startX, startY, endX, endY) = box
-                        (mask, withoutMask) = pred
-
-                        # determine the class label and color we'll use to draw
-                        # the bounding box and text
-                        label = "Mask  Detected" if mask > withoutMask else "No Mask Detected"
-                        color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
-                        # include the probability in the label
-                        # display the label and bounding box rectangle on the output
-                        # frame
-                        #cv2.putText(frame, label, (1200, 240),
-                        #           cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 2)
-                        #print(max(mask, withoutMask) * 100)
-
-    if rects:
+    if rect:
         frame2 = extracting_innercanthus(frame2)
         frame2 = extracting_forehead(frame2)
         coords_thermal(thermal, frame2)
